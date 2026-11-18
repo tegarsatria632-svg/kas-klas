@@ -37,6 +37,21 @@ Aplikasi dilengkapi asisten AI interaktif (popup *draggable* di desktop maupun m
   - **Proteksi Privasi**: Menolak otomatis permintaan yang menanyakan password, hash, token, atau API key.
   - **Moderasi Bahasa Otomatis**: Mendeteksi bahasa kasar/toxic/vulgar dengan sanksi pemblokiran akses chatbot sementara otomatis setelah 3 kali pelanggaran.
 
+## Fitur Keamanan, Arsitektur & Teknis Laravel
+
+Selain fungsionalitas utama kas kelas, sistem ini menerapkan standar keamanan dan arsitektur framework Laravel berikut:
+
+- **Login Rate Limiting & Proteksi Brute-Force (`RateLimiter`)**: Membatasi percobaan login gagal berdasarkan kombinasi identitas (`NPM/Username`) dan `IP Address`. Setelah **3x gagal login**, akses otomatis diblokir sementara selama **5 menit (300 detik)** dengan hitungan mundur waktu tunggu dan pencatatan ke log audit.
+- **Role-Based Access Control (Custom Middleware `CheckRole`)**: Proteksi rute tingkat server (`role:bendahara` untuk seluruh operasi transaksi & iuran kas; `role:admin,ketua` untuk manajemen akun & kenaikan semester) sehingga manipulasi URL langsung tetap ditolak.
+- **Enkripsi Kata Sandi (Bcrypt Hashing)**: Seluruh kata sandi diamankan menggunakan `Hash::make()` / `Hash::check()` (Bcrypt) dilengkapi mekanisme *self-healing* otomatis jika terdapat data sandi lama belum ter-hash.
+- **Proteksi CSRF & Auto-Refresh Token (Anti-419)**: Menggunakan middleware `VerifyCsrfToken`, endpoint penyegaran token otomatis (`/csrf-token`) untuk mencegah error *419 Page Expired* saat halaman lama terbuka, serta halaman error khusus `419.blade.php`.
+- **Integritas Data dengan Database Transaction (`DB::transaction`)**: Operasi pembayaran dan pembatalan iuran dibungkus transaksi atomik agar sinkronisasi antara tabel `dues_payments` dan `kas_transactions` tetap konsisten dan bebas data timpang.
+- **Audit Trail / Jejak Aktivitas (`AuditLog`)**: Setiap aksi penting (mutasi kas, iuran, ubah tarif, kelola akun, blokir login, maupun moderasi chatbot) terekam di tabel `audit_logs` beserta pelaku, sumber aksi (`web_form` / `chatbot`), payload JSON, IP Address, dan User Agent.
+- **Real-Time Presence Heartbeat**: Middleware `UpdateUserLastSeen` dan endpoint `/heartbeat` (interval 5 detik) menyinkronkan status online/offline mahasiswa di Dashboard secara langsung tanpa memuat ulang halaman.
+- **Service Layer & Dynamic Settings (`AcademicService`)**: Memisahkan logika kalender akademik (Semester 1–8, label kelas otomatis, rentang tanggal 4 minggu per bulan) serta konfigurasi tarif iuran dinamis dari controller agar kode tetap modular.
+- **Validasi Server-Side Bahasa Indonesia**: Validasi input form dan berkas unggahan (format JPG/PNG, batas ukuran) dengan pesan error terlokalisasi penuh dalam Bahasa Indonesia (`resources/lang/id/validation.php`).
+- **Optimasi Performa & Responsivitas**: Menggunakan aset produksi **Tailwind CSS** terkompilasi (*minified*), gambar format **WebP** dengan fallback PNG, serta tata letak adaptif (kartu kompak di mobile dan tabel penuh di desktop).
+
 ## Panduan Instalasi Lokal
 
 1. Clone repositori:
