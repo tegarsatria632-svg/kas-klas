@@ -13,7 +13,7 @@
 ## Fitur Utama
 
 - **Autentikasi & Hak Akses (Role-Based Access Control)**: Login berbasis NPM dengan 4 role (`Admin`, `Ketua Kelas`, `Bendahara`, dan `Mahasiswa`) serta ganti kata sandi mandiri.
-- **Dashboard Kelas**: Ringkasan identitas kelas & semester aktif serta status iuran kas bulanan pribadi (Minggu 1–4: lunas/tunggakan).
+- **Dashboard Kelas**: Ringkasan identitas kelas & semester aktif, status iuran kas bulan berjalan (Minggu 1–4), riwayat kepatuhan iuran pribadi per bulan dalam semester aktif, serta info pengurus kelas aktif (Ketua & Bendahara Kelas).
 - **Buku Kas Kelas**: Matriks iuran mingguan mahasiswa (M1–M4) sinkron dengan rentang tanggal kalender, pencatatan pemasukan/pengeluaran beserta bukti kuitansi, pengaturan tarif iuran, cetak nota, serta ekspor rekap ke Excel.
 - **Arsip & Rekapitulasi Kas**: Ringkasan saldo, pemasukan, dan pengeluaran berdasarkan mode *Per Bulan*, *Per Semester*, dan *Semua Periode (Semester 1–8)*.
 - **Kelola Akun & Semester**: Manajemen akun mahasiswa/pengurus, ubah role, reset password, sinkronisasi semester aktif kelas, serta kenaikan semester massal.

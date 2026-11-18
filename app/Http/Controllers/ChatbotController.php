@@ -2483,7 +2483,7 @@ Kamu memahami tata letak fisik dan letak persis seluruh tombol pada antarmuka we
    • Sudut Kiri: Tombol Hamburger Menu (tiga garis horizontal) untuk membuka/tutup sidebar.
    • Sudut Kanan: Jam real-time, Badge Semester Aktif (contoh: Semester 5 (Kelas 5A)), dan Badge Role login.
 3. Halaman Dashboard (Menu ke-1 Sidebar):
-   • Menampilkan ringkasan status iuran kas pribadi (4 minggu M1-M4) untuk bulan dan semester berjalan.
+   • Menampilkan status iuran kas bulan berjalan (4 minggu M1-M4), riwayat kepatuhan iuran pribadi per bulan di semester aktif, serta info pengurus kelas aktif (Ketua & Bendahara Kelas).
 4. Halaman Buku Kas Kelas (Menu ke-2 Sidebar):
    • Toolbar Atas: Filter Semester/Bulan/Tahun, tombol pintas Arsip Kas, serta tombol '+ Catat Transaksi' dan 'Atur Tarif Iuran' (khusus Bendahara).
    • Matriks Iuran Mingguan: Monitoring status bayar per mahasiswa untuk Minggu 1 s/d 4 beserta tombol 'Bayar' dan 'Batalkan' (khusus Bendahara).
