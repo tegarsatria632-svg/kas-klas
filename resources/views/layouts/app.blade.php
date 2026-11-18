@@ -88,28 +88,28 @@
             </button>
         </div>
 
-        <!-- Navigation Menu & Actions (Area Menu Tengah) -->
-        <div class="p-1.5 md:p-4 flex-1 overflow-y-auto custom-scrollbar">
-            <nav class="space-y-0.5 md:space-y-1.5">
+        <!-- Navigation Menu & Actions (Clean Flat Navigation, Tanpa Kotak Pill) -->
+        <div class="py-3 px-2 md:px-3 flex-1 overflow-y-auto custom-scrollbar">
+            <nav class="space-y-0.5">
                 <a href="{{ route('dashboard') }}" 
-                   class="flex items-center px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl text-[12px] md:text-[14px] transition-all duration-150 {{ request()->routeIs('dashboard') ? 'bg-slate-900 text-white font-bold shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-semibold' }}">
-                    <svg class="w-4 h-4 md:w-5 md:h-5 mr-2.5 md:mr-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   class="flex items-center px-3 py-2 rounded-md border-l-2 text-[13px] transition-colors duration-150 {{ request()->routeIs('dashboard') ? 'border-slate-900 bg-slate-100/90 text-slate-950 font-bold' : 'border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium' }}">
+                    <svg class="w-4 h-4 mr-3 shrink-0 {{ request()->routeIs('dashboard') ? 'text-slate-900' : 'text-slate-500' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
                     </svg>
                     <span>Dashboard</span>
                 </a>
 
                 <a href="{{ route('kas.index') }}" 
-                   class="flex items-center px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl text-[12px] md:text-[14px] transition-all duration-150 {{ request()->routeIs('kas.*') ? 'bg-slate-900 text-white font-bold shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-semibold' }}">
-                    <svg class="w-4 h-4 md:w-5 md:h-5 mr-2.5 md:mr-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   class="flex items-center px-3 py-2 rounded-md border-l-2 text-[13px] transition-colors duration-150 {{ request()->routeIs('kas.*') ? 'border-slate-900 bg-slate-100/90 text-slate-950 font-bold' : 'border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium' }}">
+                    <svg class="w-4 h-4 mr-3 shrink-0 {{ request()->routeIs('kas.*') ? 'text-slate-900' : 'text-slate-500' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
                     <span>Buku Kas Kelas</span>
                 </a>
 
                 <a href="{{ route('arsip.index') }}" 
-                   class="flex items-center px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl text-[12px] md:text-[14px] transition-all duration-150 {{ request()->routeIs('arsip.*') ? 'bg-slate-900 text-white font-bold shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-semibold' }}">
-                    <svg class="w-4 h-4 md:w-5 md:h-5 mr-2.5 md:mr-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   class="flex items-center px-3 py-2 rounded-md border-l-2 text-[13px] transition-colors duration-150 {{ request()->routeIs('arsip.*') ? 'border-slate-900 bg-slate-100/90 text-slate-950 font-bold' : 'border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium' }}">
+                    <svg class="w-4 h-4 mr-3 shrink-0 {{ request()->routeIs('arsip.*') ? 'text-slate-900' : 'text-slate-500' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
                     </svg>
                     <span>Arsip & Rekapitulasi</span>
@@ -117,8 +117,8 @@
 
                 @if(auth()->check() && in_array(auth()->user()->role, ['admin', 'ketua']))
                 <a href="{{ route('admin.users.index') }}" 
-                   class="flex items-center px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl text-[12px] md:text-[14px] transition-all duration-150 {{ request()->routeIs('admin.users.*') ? 'bg-slate-900 text-white font-bold shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-semibold' }}">
-                    <svg class="w-4 h-4 md:w-5 md:h-5 mr-2.5 md:mr-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   class="flex items-center px-3 py-2 rounded-md border-l-2 text-[13px] transition-colors duration-150 {{ request()->routeIs('admin.users.*') ? 'border-slate-900 bg-slate-100/90 text-slate-950 font-bold' : 'border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium' }}">
+                    <svg class="w-4 h-4 mr-3 shrink-0 {{ request()->routeIs('admin.users.*') ? 'text-slate-900' : 'text-slate-500' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
                     </svg>
                     <span>Kelola Akun & Semester</span>
@@ -127,59 +127,59 @@
 
                 <!-- Pengaturan Sandi Mandiri -->
                 @if(auth()->check())
-                <button type="button" 
-                        onclick="openChangePasswordModal()" 
-                        class="w-full flex items-center px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl text-[12px] md:text-[14px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-all duration-150 group text-left focus:outline-none"
-                        title="Ubah kata sandi akun Anda">
-                    <svg class="w-4 h-4 md:w-5 md:h-5 mr-2.5 md:mr-3.5 text-slate-500 group-hover:text-blue-600 transition-colors shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                    </svg>
-                    <span>Pengaturan Sandi</span>
-                </button>
+                <div class="pt-2 mt-2 border-t border-slate-100">
+                    <button type="button" 
+                            onclick="openChangePasswordModal()" 
+                            class="w-full flex items-center px-3 py-2 rounded-md border-l-2 border-transparent text-[13px] font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors duration-150 text-left focus:outline-none"
+                            title="Ubah kata sandi akun Anda">
+                        <svg class="w-4 h-4 mr-3 text-slate-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                        </svg>
+                        <span>Pengaturan Sandi</span>
+                    </button>
+                </div>
                 @endif
             </nav>
         </div>
 
-        <!-- 3. FOOTER PINNED (Seamless & Clean, Tanpa Kotak Bertumpuk) -->
+        <!-- 3. FOOTER PINNED (Flat & Seamless, Tanpa Kotak) -->
         @if(auth()->check())
-        <div class="p-3 border-t border-slate-200 bg-white shrink-0 space-y-2">
-            <!-- Info Pengguna Bersih & Menyatu -->
-            <div class="flex items-center justify-between px-1">
-                <div class="min-w-0 pr-2">
-                    <div class="text-xs md:text-sm font-bold text-slate-900 truncate">{{ auth()->user()->name }}</div>
+        <div class="px-4 py-3 border-t border-slate-200 bg-white shrink-0 space-y-2">
+            <div class="flex items-baseline justify-between gap-2">
+                <div class="min-w-0">
+                    <div class="text-xs font-bold text-slate-900 truncate">{{ auth()->user()->name }}</div>
                     <div class="text-[11px] text-slate-500 font-mono">{{ auth()->user()->npm }}</div>
                 </div>
-                <span class="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wide
-                    @if(auth()->user()->role === 'admin') bg-purple-50 text-purple-700 border border-purple-200
-                    @elseif(auth()->user()->role === 'bendahara') bg-emerald-50 text-emerald-700 border border-emerald-200
-                    @elseif(auth()->user()->role === 'ketua') bg-amber-50 text-amber-800 border border-amber-200
-                    @else bg-slate-100 text-slate-700 border border-slate-200 @endif">
+                <span class="text-[10px] font-bold uppercase tracking-wider shrink-0
+                    @if(auth()->user()->role === 'admin') text-purple-700
+                    @elseif(auth()->user()->role === 'bendahara') text-emerald-700
+                    @elseif(auth()->user()->role === 'ketua') text-sky-700
+                    @else text-slate-600 @endif">
                     {{ auth()->user()->role }}
                 </span>
             </div>
 
-            <!-- Tombol Logout Langsung (Metode Link GET: 100% Bebas Error 419) -->
             <a href="{{ route('logout') }}" 
                onclick="return confirm('Apakah Anda yakin ingin keluar dari sistem?')"
-               class="w-full min-h-[44px] flex items-center justify-center px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:text-rose-800 hover:bg-rose-50 transition-all duration-150 group border border-slate-200 hover:border-rose-200" 
+               class="w-full min-h-[38px] flex items-center px-2 py-1.5 -mx-2 rounded-md text-xs font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50/70 transition-colors" 
                title="Keluar dari akun">
-                <svg class="w-4 h-4 mr-2 text-rose-500 group-hover:text-rose-700 transition-colors shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-4 h-4 mr-2 text-rose-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
-                <span>Keluar / Logout</span>
+                <span>Keluar</span>
             </a>
         </div>
         @endif
     </aside>
 
-    <!-- Main Workspace (Hanya Halaman Ini yang Bergerak / Bergulir Saat Layar Digeser) -->
+    <!-- Main Workspace -->
     <div class="flex-1 flex flex-col min-w-0 min-h-screen md:min-h-0 md:h-screen md:overflow-y-auto custom-scrollbar">
-        <!-- Top App Bar -->
+        <!-- Top App Bar (Clean Inline Metadata, Tanpa 3 Kotak Badge Bertumpuk) -->
         <header class="h-14 bg-white border-b border-slate-200 flex items-center px-3 sm:px-5 justify-between sticky top-0 z-20 shrink-0">
             <div class="flex items-center space-x-2.5">
                 <button onclick="toggleSidebar()" 
                         id="sidebar-toggle-btn"
-                        class="p-2 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300 transition shrink-0 cursor-pointer"
+                        class="p-2 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 transition shrink-0 cursor-pointer"
                         title="Buka/Tutup Menu Navigasi"
                         aria-label="Buka/Tutup Menu Navigasi">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -196,23 +196,23 @@
                 </div>
             </div>
 
-            <div class="flex items-center space-x-1.5 sm:space-x-2">
-                <!-- Live Clock (Desktop Only) -->
-                <div class="hidden lg:flex items-center space-x-1.5 text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-                    <span id="live-sync-clock">{{ \Carbon\Carbon::now()->translatedFormat('l, d F Y') }} &bull; {{ date('H:i') }} WIB</span>
-                </div>
+            <div class="flex items-center gap-2 sm:gap-3 text-xs">
+                <!-- Live Clock (Desktop Only - Teks Polos Tanpa Kotak) -->
+                <span id="live-sync-clock" class="hidden lg:inline text-slate-500 font-mono tabular-nums">{{ \Carbon\Carbon::now()->translatedFormat('l, d F Y') }} &bull; {{ date('H:i') }} WIB</span>
+                <span class="hidden lg:inline text-slate-300" aria-hidden="true">|</span>
 
-                <span class="inline-flex items-center px-2 py-1 sm:px-2.5 sm:py-1 rounded text-[11px] sm:text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
+                <span class="text-[11px] sm:text-xs font-semibold text-slate-700 whitespace-nowrap">
                     <span class="hidden sm:inline">{{ \App\Services\AcademicService::getActiveSemester() }} (Kelas {{ \App\Services\AcademicService::getKelasLabel() }})</span>
                     <span class="sm:hidden">{{ \App\Services\AcademicService::getActiveSemester() }}</span>
                 </span>
 
                 @if(auth()->check())
-                <span class="inline-flex items-center px-2 py-1 sm:px-2.5 sm:py-1 rounded text-[11px] sm:text-xs font-semibold whitespace-nowrap
-                    @if(auth()->user()->role === 'admin') bg-purple-100 text-purple-700 border border-purple-200
-                    @elseif(auth()->user()->role === 'bendahara') bg-emerald-100 text-emerald-700 border border-emerald-200
-                    @elseif(auth()->user()->role === 'ketua') bg-sky-100 text-sky-700 border border-sky-200
-                    @else bg-slate-100 text-slate-600 border border-slate-200 @endif">
+                <span class="text-slate-300" aria-hidden="true">&bull;</span>
+                <span class="text-[10.5px] sm:text-[11px] font-bold uppercase tracking-wider whitespace-nowrap
+                    @if(auth()->user()->role === 'admin') text-purple-700
+                    @elseif(auth()->user()->role === 'bendahara') text-emerald-700
+                    @elseif(auth()->user()->role === 'ketua') text-sky-700
+                    @else text-slate-600 @endif">
                     {{ strtoupper(auth()->user()->role) }}
                 </span>
                 @endif

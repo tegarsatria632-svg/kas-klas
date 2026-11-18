@@ -30,8 +30,8 @@
         </div>
     </div>
 
-    <!-- Administrative Semester Control Banner (Satu Panel Bersih) -->
-    <div class="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-2xs space-y-4">
+    <!-- Administrative Semester Control & Filter Bar (Flat, Tanpa Outer Card) -->
+    <section class="py-4 border-y border-slate-200 space-y-3.5">
         <form method="POST" action="{{ route('admin.users.setActiveSemester') }}" class="flex flex-col lg:flex-row lg:items-center justify-between gap-3" onsubmit="return confirm('PERINGATAN: Mengubah semester aktif akan memperbarui periode aktif dan menyinkronkan seluruh data sistem kelas. Lanjutkan perubahan?')">
             @csrf
             <div>
@@ -44,7 +44,7 @@
             </div>
 
             <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-wrap">
-                <select name="semester" aria-label="Pilih Semester Aktif" class="w-full sm:w-auto text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white font-bold text-slate-900 focus:ring-2 focus:ring-slate-900 shadow-2xs">
+                <select name="semester" aria-label="Pilih Semester Aktif" class="w-full sm:w-auto text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white font-semibold text-slate-900 focus:ring-2 focus:ring-slate-900">
                     @foreach($semesters as $sem)
                         @php $lbl = \App\Services\AcademicService::getKelasLabel($sem); @endphp
                         <option value="{{ $sem }}" {{ $activeClassSemester === $sem ? 'selected' : '' }}>
@@ -58,15 +58,15 @@
                     Sinkronkan mahasiswa aktif
                 </label>
 
-                <button type="submit" class="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-2xs transition text-center min-h-[38px]">
+                <button type="submit" class="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition text-center min-h-[38px]">
                     Terapkan Semester
                 </button>
             </div>
         </form>
 
         <!-- Filter Bar Semester & Status Akademik -->
-        <div class="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 flex-wrap">
-            <span class="text-xs font-semibold text-slate-500">Filter Data:</span>
+        <div class="pt-3 border-t border-slate-200/70 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 flex-wrap">
+            <span class="text-xs font-semibold text-slate-600">Filter Data:</span>
             <form method="GET" action="{{ route('admin.users.index') }}" class="flex items-center gap-2 flex-wrap flex-1">
                 <select name="semester" onchange="this.form.submit()" class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white font-medium text-slate-700 focus:ring-2 focus:ring-slate-900">
                     <option value="">Semua Semester (1-8)</option>
@@ -86,34 +86,34 @@
                 @endif
             </form>
         </div>
-    </div>
+    </section>
 
-    <!-- Users Table (Stripe Style) -->
-    <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
-        <div class="px-4 sm:px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between flex-wrap gap-2">
-            <div>
-                <h3 class="text-xs font-bold text-slate-800 uppercase tracking-wider">Daftar Akun Pengguna</h3>
-                <span class="text-[11px] text-slate-500">Kelola role, reset password, dan status akademik akun</span>
-            </div>
+    <!-- Daftar Akun Pengguna (Flat Section) -->
+    <section class="space-y-3">
+        <div>
+            <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Daftar Akun Pengguna</h3>
+            <p class="text-[11px] text-slate-500 mt-0.5">Kelola peran, reset password, dan status akademik akun</p>
         </div>
 
-        <!-- Tampilan Kartu Khusus Mobile (Tidak Perlu Geser Layar) -->
-        <div class="block md:hidden divide-y divide-slate-100">
+        <!-- Tampilan Daftar Ringkas Mobile -->
+        <div class="block md:hidden divide-y divide-slate-200/80 border-y border-slate-200 bg-white -mx-4 sm:mx-0 sm:border sm:rounded-lg">
             @forelse($users as $u)
-            <div class="p-4 space-y-3">
+            <div class="px-4 py-3.5 space-y-2.5">
                 <div class="flex items-start justify-between gap-2">
-                    <div>
-                        <div class="font-bold text-slate-900 text-sm leading-snug">{{ $u->name }}</div>
-                        <div class="text-xs text-slate-600 font-mono font-bold mt-0.5">{{ $u->npm }}</div>
+                    <div class="min-w-0">
+                        <div class="font-bold text-slate-900 text-sm leading-snug truncate">{{ $u->name }}</div>
+                        <div class="text-[11px] text-slate-500 font-mono mt-0.5">
+                            {{ $u->npm }} &bull; <span class="font-sans font-semibold text-slate-700">{{ $u->semester }}</span> &bull; <span class="font-sans font-semibold {{ $u->status_akademik === 'Aktif' ? 'text-emerald-700' : 'text-slate-500' }}">{{ $u->status_akademik ?? 'Aktif' }}</span>
+                        </div>
                     </div>
                     <form method="POST" action="{{ route('admin.users.updateRole', $u) }}" class="inline-block shrink-0">
                         @csrf
                         @method('PATCH')
-                        <select name="role" onchange="if(confirm('Apakah Anda yakin ingin mengubah peran pengguna {{ addslashes($u->name) }} menjadi ' + this.options[this.selectedIndex].text + '?')) { this.form.submit(); } else { this.value = '{{ $u->role }}'; }" class="text-xs border border-slate-300 rounded-md px-2 py-1 font-semibold
-                            @if($u->role === 'admin') text-purple-700 bg-purple-50
-                            @elseif($u->role === 'bendahara') text-emerald-700 bg-emerald-50
-                            @elseif($u->role === 'ketua') text-sky-700 bg-sky-50
-                            @else text-slate-700 bg-slate-50 @endif">
+                        <select name="role" onchange="if(confirm('Apakah Anda yakin ingin mengubah peran pengguna {{ addslashes($u->name) }} menjadi ' + this.options[this.selectedIndex].text + '?')) { this.form.submit(); } else { this.value = '{{ $u->role }}'; }" class="text-xs border border-slate-300 rounded-md px-2 py-1 font-semibold bg-white
+                            @if($u->role === 'admin') text-purple-700
+                            @elseif($u->role === 'bendahara') text-emerald-700
+                            @elseif($u->role === 'ketua') text-sky-700
+                            @else text-slate-700 @endif">
                             <option value="admin" {{ $u->role === 'admin' ? 'selected' : '' }}>Admin</option>
                             <option value="bendahara" {{ $u->role === 'bendahara' ? 'selected' : '' }}>Bendahara</option>
                             <option value="ketua" {{ $u->role === 'ketua' ? 'selected' : '' }}>Ketua</option>
@@ -122,31 +122,21 @@
                     </form>
                 </div>
 
-                <div class="flex items-center gap-2 text-xs">
-                    <span class="inline-block px-2.5 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
-                        {{ $u->semester }}
-                    </span>
-                    <span class="inline-block px-2 py-0.5 rounded text-[11px] font-bold 
-                        {{ $u->status_akademik === 'Aktif' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200' }}">
-                        {{ $u->status_akademik ?? 'Aktif' }}
-                    </span>
-                </div>
-
-                <!-- Tombol Tindakan Mobile -->
-                <div class="pt-1 flex items-center gap-2">
+                <!-- Tombol Tindakan Mobile (Flat Inline Links) -->
+                <div class="flex items-center gap-4 pt-1 text-xs">
                     <button type="button" onclick="openAcademicModal({{ json_encode($u) }})" 
-                            class="flex-1 py-2 px-3 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-lg text-xs font-semibold transition text-center min-h-[38px]">
+                            class="text-slate-700 hover:text-slate-900 hover:underline font-semibold py-1">
                         Akademik
                     </button>
                     @if($u->id !== auth()->id())
                     <button type="button" onclick="openResetModal('{{ $u->id }}', '{{ addslashes($u->name) }}', '{{ $u->npm }}')" 
-                            class="flex-1 py-2 px-3 bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 rounded-lg text-xs font-semibold transition text-center min-h-[38px]">
+                            class="text-slate-700 hover:text-slate-900 hover:underline font-semibold py-1">
                         Reset Sandi
                     </button>
-                    <form method="POST" action="{{ route('admin.users.destroy', $u) }}" class="inline shrink-0" onsubmit="return confirm('PERINGATAN: Apakah Anda yakin ingin menghapus akun pengguna \'{{ addslashes($u->name) }}\' secara permanen dari sistem?')">
+                    <form method="POST" action="{{ route('admin.users.destroy', $u) }}" class="inline ml-auto" onsubmit="return confirm('PERINGATAN: Apakah Anda yakin ingin menghapus akun pengguna \'{{ addslashes($u->name) }}\' secara permanen dari sistem?')">
                         @csrf
                         @method('DELETE')
-                        <button type="submit" class="py-2 px-3 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg text-xs font-semibold transition min-h-[38px]">
+                        <button type="submit" class="text-rose-600 hover:text-rose-800 hover:underline font-semibold py-1">
                             Hapus
                         </button>
                     </form>
@@ -161,97 +151,97 @@
             @endforelse
         </div>
 
-        <!-- Tampilan Tabel Desktop (Layar MD ke Atas) -->
-        <div class="hidden md:block overflow-x-auto custom-scrollbar w-full">
-            <table class="w-full text-left text-xs border-collapse min-w-[700px]">
-                <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase">
-                    <tr>
-                        <th class="px-4 py-3 border-r border-slate-200 w-28">NPM</th>
-                        <th class="px-4 py-3 border-r border-slate-200">Nama Lengkap</th>
-                        <th class="px-4 py-3 border-r border-slate-200 w-32">Peran / Role</th>
-                        <th class="px-4 py-3 border-r border-slate-200 w-32 text-center">Semester</th>
-                        <th class="px-4 py-3 border-r border-slate-200 w-32 text-center">Status Akademik</th>
-                        <th class="px-4 py-3 text-right w-44">Tindakan</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-200">
-                    @forelse($users as $u)
-                    <tr class="hover:bg-slate-50">
-                        <td class="px-4 py-3 border-r border-slate-200 text-slate-900 font-mono font-bold">{{ $u->npm }}</td>
-                        <td class="px-4 py-3 border-r border-slate-200">
-                            <div class="font-bold text-slate-900">{{ $u->name }}</div>
-                        </td>
-                        <td class="px-4 py-3 border-r border-slate-200">
-                            <form method="POST" action="{{ route('admin.users.updateRole', $u) }}" class="inline-block">
-                                @csrf
-                                @method('PATCH')
-                                <select name="role" onchange="if(confirm('Apakah Anda yakin ingin mengubah peran pengguna {{ addslashes($u->name) }} menjadi ' + this.options[this.selectedIndex].text + '?')) { this.form.submit(); } else { this.value = '{{ $u->role }}'; }" class="text-xs border border-slate-300 rounded-md px-2 py-0.5 font-semibold
-                                    @if($u->role === 'admin') text-purple-700 bg-purple-50
-                                    @elseif($u->role === 'bendahara') text-emerald-700 bg-emerald-50
-                                    @elseif($u->role === 'ketua') text-sky-700 bg-sky-50
-                                    @else text-slate-700 bg-slate-50 @endif">
-                                    <option value="admin" {{ $u->role === 'admin' ? 'selected' : '' }}>Admin</option>
-                                    <option value="bendahara" {{ $u->role === 'bendahara' ? 'selected' : '' }}>Bendahara</option>
-                                    <option value="ketua" {{ $u->role === 'ketua' ? 'selected' : '' }}>Ketua</option>
-                                    <option value="mahasiswa" {{ $u->role === 'mahasiswa' ? 'selected' : '' }}>Mahasiswa</option>
-                                </select>
-                            </form>
-                        </td>
-                        <td class="px-4 py-3 border-r border-slate-200 text-center font-bold text-blue-700">
-                            <span class="inline-block px-2 py-0.5 rounded text-[11px] bg-blue-50 border border-blue-200">
-                                {{ $u->semester }}
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 border-r border-slate-200 text-center">
-                            <span class="inline-block px-2 py-0.5 rounded text-[11px] font-bold 
-                                {{ $u->status_akademik === 'Aktif' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200' }}">
-                                {{ $u->status_akademik ?? 'Aktif' }}
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 text-right">
-                            <div class="flex items-center justify-end gap-1.5">
-                                <button onclick="openAcademicModal({{ json_encode($u) }})" 
-                                        class="px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded text-[11px] font-semibold transition">
-                                    Akademik
-                                </button>
-                                @if($u->id !== auth()->id())
-                                <button onclick="openResetModal('{{ $u->id }}', '{{ addslashes($u->name) }}', '{{ $u->npm }}')" 
-                                        class="px-2 py-1 bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 rounded text-[11px] font-semibold transition">
-                                    Sandi
-                                </button>
-                                @endif
-                                @if($u->id !== auth()->id())
-                                <form method="POST" action="{{ route('admin.users.destroy', $u) }}" class="inline" onsubmit="return confirm('PERINGATAN: Apakah Anda yakin ingin menghapus akun pengguna \'{{ addslashes($u->name) }}\' secara permanen dari sistem?')">
+        <!-- Tampilan Tabel Desktop (Flat & Editorial) -->
+        <div class="hidden md:block bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <div class="overflow-x-auto custom-scrollbar w-full">
+                <table class="w-full text-left text-xs border-collapse min-w-[700px]">
+                    <thead class="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-semibold uppercase">
+                        <tr>
+                            <th class="px-4 py-3 border-r border-slate-200 w-28">NPM</th>
+                            <th class="px-4 py-3 border-r border-slate-200">Nama Lengkap</th>
+                            <th class="px-4 py-3 border-r border-slate-200 w-32">Peran / Role</th>
+                            <th class="px-4 py-3 border-r border-slate-200 w-32 text-center">Semester</th>
+                            <th class="px-4 py-3 border-r border-slate-200 w-32 text-center">Status Akademik</th>
+                            <th class="px-4 py-3 text-right w-44">Tindakan</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                        @forelse($users as $u)
+                        <tr class="hover:bg-slate-50/70 transition-colors">
+                            <td class="px-4 py-3 border-r border-slate-200 text-slate-900 font-mono font-semibold">{{ $u->npm }}</td>
+                            <td class="px-4 py-3 border-r border-slate-200">
+                                <div class="font-semibold text-slate-900">{{ $u->name }}</div>
+                            </td>
+                            <td class="px-4 py-3 border-r border-slate-200">
+                                <form method="POST" action="{{ route('admin.users.updateRole', $u) }}" class="inline-block">
                                     @csrf
-                                    @method('DELETE')
-                                    <button type="submit" class="px-2 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded text-[11px] font-semibold transition">
-                                        Hapus
-                                    </button>
+                                    @method('PATCH')
+                                    <select name="role" onchange="if(confirm('Apakah Anda yakin ingin mengubah peran pengguna {{ addslashes($u->name) }} menjadi ' + this.options[this.selectedIndex].text + '?')) { this.form.submit(); } else { this.value = '{{ $u->role }}'; }" class="text-xs border border-slate-300 rounded-md px-2 py-0.5 font-semibold bg-white
+                                        @if($u->role === 'admin') text-purple-700
+                                        @elseif($u->role === 'bendahara') text-emerald-700
+                                        @elseif($u->role === 'ketua') text-sky-700
+                                        @else text-slate-700 @endif">
+                                        <option value="admin" {{ $u->role === 'admin' ? 'selected' : '' }}>Admin</option>
+                                        <option value="bendahara" {{ $u->role === 'bendahara' ? 'selected' : '' }}>Bendahara</option>
+                                        <option value="ketua" {{ $u->role === 'ketua' ? 'selected' : '' }}>Ketua</option>
+                                        <option value="mahasiswa" {{ $u->role === 'mahasiswa' ? 'selected' : '' }}>Mahasiswa</option>
+                                    </select>
                                 </form>
-                                @endif
-                            </div>
-                        </td>
-                    </tr>
-                    @empty
-                    <tr>
-                        <td colspan="6" class="px-4 py-12 text-center text-slate-600">
-                            <p class="text-sm font-semibold text-slate-800">Tidak ada pengguna yang cocok dengan kriteria filter.</p>
-                            <p class="text-xs text-slate-600 mt-1">Coba sesuaikan kata kunci atau reset filter semester dan status.</p>
-                            <div class="mt-4 flex items-center justify-center">
-                                <a href="{{ route('admin.users.index') }}" class="inline-flex items-center px-4 py-2 min-h-[44px] bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg border border-slate-300 transition">
-                                    Reset Filter &amp; Tampilkan Semua Pengguna
-                                </a>
-                            </div>
-                        </td>
-                    </tr>
-                    @endforelse
-                </tbody>
-            </table>
+                            </td>
+                            <td class="px-4 py-3 border-r border-slate-200 text-center font-semibold text-slate-800">
+                                {{ $u->semester }}
+                            </td>
+                            <td class="px-4 py-3 border-r border-slate-200 text-center">
+                                <span class="text-[11px] font-bold {{ $u->status_akademik === 'Aktif' ? 'text-emerald-700' : 'text-slate-500' }}">
+                                    {{ $u->status_akademik ?? 'Aktif' }}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 text-right">
+                                <div class="flex items-center justify-end gap-3">
+                                    <button onclick="openAcademicModal({{ json_encode($u) }})" 
+                                            class="text-slate-700 hover:text-slate-900 hover:underline text-[11px] font-semibold transition">
+                                        Akademik
+                                    </button>
+                                    @if($u->id !== auth()->id())
+                                    <button onclick="openResetModal('{{ $u->id }}', '{{ addslashes($u->name) }}', '{{ $u->npm }}')" 
+                                            class="text-slate-700 hover:text-slate-900 hover:underline text-[11px] font-semibold transition">
+                                        Sandi
+                                    </button>
+                                    <form method="POST" action="{{ route('admin.users.destroy', $u) }}" class="inline" onsubmit="return confirm('PERINGATAN: Apakah Anda yakin ingin menghapus akun pengguna \'{{ addslashes($u->name) }}\' secara permanen dari sistem?')">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="text-rose-600 hover:text-rose-800 hover:underline text-[11px] font-semibold transition">
+                                            Hapus
+                                        </button>
+                                    </form>
+                                    @endif
+                                </div>
+                            </td>
+                        </tr>
+                        @empty
+                        <tr>
+                            <td colspan="6" class="px-4 py-12 text-center text-slate-600">
+                                <p class="text-sm font-semibold text-slate-800">Tidak ada pengguna yang cocok dengan kriteria filter.</p>
+                                <p class="text-xs text-slate-600 mt-1">Coba sesuaikan kata kunci atau reset filter semester dan status.</p>
+                                <div class="mt-4 flex items-center justify-center">
+                                    <a href="{{ route('admin.users.index') }}" class="inline-flex items-center px-4 py-2 min-h-[44px] bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg border border-slate-300 transition">
+                                        Reset Filter &amp; Tampilkan Semua Pengguna
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
         </div>
-        <div class="p-4 border-t border-slate-200">
+
+        @if($users->hasPages())
+        <div class="pt-2 overflow-x-auto">
             {{ $users->links() }}
         </div>
-    </div>
+        @endif
+    </section>
 </div>
 
 <!-- MODAL KENAIKAN SEMESTER MASSAL (S1 INFORMATIKA UPS TEGAL) -->

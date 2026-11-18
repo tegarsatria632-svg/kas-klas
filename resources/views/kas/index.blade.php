@@ -75,80 +75,72 @@
     </div>
 
     <!-- MATRIKS IURAN MINGGUAN (MINGGU 1 S/D 4) -->
-    <div class="bg-white border border-slate-200 rounded-xl sm:rounded-2xl overflow-hidden shadow-2xs">
-        <div class="px-3.5 sm:px-5 py-2.5 sm:py-3.5 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+    <section class="pt-4 border-t border-slate-200 space-y-3.5">
+        <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
             <div>
-                <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                    <h2 class="text-[11px] sm:text-xs font-bold text-slate-800 uppercase tracking-wide">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wide">
                         Matriks Iuran Mingguan &bull; {{ $namaBulan }} {{ $selectedYear }}
                     </h2>
                     @if($isCurrentRealMonth)
-                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-slate-900 text-white shadow-2xs">
-                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                        <span>Minggu ke-{{ $realActiveWeek }} ({{ $weekRanges[$realActiveWeek]['date_range'] ?? '' }} {{ $namaBulan }}) &bull; Minggu Ini</span>
+                    <span class="text-slate-300 hidden sm:inline">|</span>
+                    <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 shrink-0"></span>
+                        <span>Minggu ke-{{ $realActiveWeek }} ({{ $weekRanges[$realActiveWeek]['date_range'] ?? '' }} {{ $namaBulan }})</span>
                     </span>
                     @elseif($selectedYear < $realCurrentYear || ($selectedYear == $realCurrentYear && $selectedMonth < $realCurrentMonth))
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-200/80 text-slate-700">
-                        Periode Lampau (Selesai)
-                    </span>
+                    <span class="text-slate-300">&bull;</span>
+                    <span class="text-[11px] font-medium text-slate-500">Periode Lampau</span>
                     @else
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-200/80 text-slate-700">
-                        Periode Mendatang
-                    </span>
+                    <span class="text-slate-300">&bull;</span>
+                    <span class="text-[11px] font-medium text-slate-500">Periode Mendatang</span>
                     @endif
                 </div>
-                <p class="text-[10.5px] sm:text-[11px] text-slate-600 mt-0.5">
+                <p class="text-[11px] text-slate-600 mt-1">
                     {{ $selectedSemester }} (Kelas {{ $kelasLabel }}) &bull; Lunas: <strong class="text-emerald-700 font-mono tabular-nums">{{ $totalPaidStudentsInPeriod }}</strong> mhs &bull; Belum Lunas: <strong class="text-rose-700 font-mono tabular-nums">{{ $totalUnpaidStudentsInPeriod }}</strong> mhs
                 </p>
             </div>
         </div>
 
-        <!-- Tampilan Kartu Khusus Mobile (Tidak Perlu Geser Layar) -->
-        <div class="block md:hidden divide-y divide-slate-100">
+        <!-- Tampilan Daftar Ringkas Mobile (Flat, 1 Strip Terpadu Per Mahasiswa) -->
+        <div class="block md:hidden divide-y divide-slate-200/80 border-y border-slate-200 bg-white -mx-4 sm:mx-0 sm:border sm:rounded-lg">
             @forelse($students as $idx => $mhs)
             @php
                 $paidWeeksList = $mhs->duesPayments->pluck('week_number')->map(function($w){ return (int)$w; })->toArray();
                 $totalPaidCount = count($paidWeeksList);
             @endphp
-            <div class="p-2.5 sm:p-3.5 space-y-1.5 sm:space-y-2">
-                <div class="flex items-start justify-between gap-2">
+            <div class="px-4 py-3 sm:p-3.5 space-y-2">
+                <div class="flex items-baseline justify-between gap-2">
                     <div class="min-w-0">
                         <div class="font-bold text-slate-900 text-xs sm:text-sm leading-tight truncate">{{ $mhs->name }}</div>
-                        <div class="text-[10px] sm:text-[11px] text-slate-500 font-mono mt-0.5">{{ $mhs->npm }}</div>
+                        <div class="text-[11px] text-slate-500 font-mono mt-0.5">{{ $mhs->npm }}</div>
                     </div>
-                    <span class="inline-block px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-bold shrink-0 font-mono tabular-nums
-                        {{ $totalPaidCount === 4 ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-rose-100 text-rose-800 border border-rose-200' }}">
+                    <span class="text-[11px] font-bold shrink-0 font-mono tabular-nums {{ $totalPaidCount === 4 ? 'text-emerald-700' : 'text-rose-700' }}">
                         {{ $totalPaidCount }}/4 Minggu
                     </span>
                 </div>
 
-                <!-- Indikator 4 Minggu (Sinkron Kalender & Rentang Tanggal) -->
-                <div class="grid grid-cols-4 gap-1 sm:gap-1.5">
+                <!-- 1 Strip Segmented 4 Minggu (Bukan 4 Kotak Terpisah) -->
+                <div class="grid grid-cols-4 divide-x divide-slate-200 border border-slate-200 rounded-lg bg-white overflow-hidden">
                     @for($w = 1; $w <= 4; $w++)
                     @php 
                         $isPaid = in_array($w, $paidWeeksList); 
                         $isCurrentWeek = ($isCurrentRealMonth && $w === $realActiveWeek);
                     @endphp
-                    <div class="py-1 px-1 sm:py-1.5 sm:px-2 rounded-lg text-center border transition-all relative
-                        {{ $isPaid ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50/60 border-rose-200 text-rose-700' }}
-                        {{ $isCurrentWeek ? 'ring-[1.5px] ring-slate-900 border-slate-900 shadow-2xs font-bold' : '' }}">
+                    <div class="py-1.5 px-1 text-center {{ $isCurrentWeek ? 'bg-slate-50' : '' }}">
                         <div class="flex items-center justify-center gap-0.5">
-                            <span class="text-[9px] sm:text-[10px] font-bold uppercase font-mono leading-none">M{{ $w }}</span>
+                            <span class="text-[9.5px] font-bold uppercase font-mono leading-none {{ $isCurrentWeek ? 'text-slate-900' : 'text-slate-600' }}">M{{ $w }}</span>
                             @if($isCurrentWeek)
-                            <span class="w-1 h-1 rounded-full bg-emerald-500 shrink-0" title="Minggu Berjalan"></span>
+                            <span class="w-1 h-1 rounded-full bg-emerald-600 shrink-0" title="Minggu Berjalan"></span>
                             @endif
                         </div>
                         @if(!empty($weekRanges[$w]['date_range']))
-                        <div class="text-[7.5px] sm:text-[8.5px] text-slate-500 font-mono leading-none mt-0.5 truncate">
+                        <div class="text-[8px] text-slate-500 font-mono leading-none mt-0.5 truncate">
                             {{ $weekRanges[$w]['date_range'] }}
                         </div>
                         @endif
-                        <div class="text-[9.5px] sm:text-[10.5px] font-bold leading-tight mt-0.5">
-                            @if($isPaid)
-                                <span class="text-emerald-800">Lunas</span>
-                            @else
-                                <span class="text-rose-700">Belum</span>
-                            @endif
+                        <div class="text-[10px] font-bold leading-tight mt-0.5 {{ $isPaid ? 'text-emerald-700' : 'text-rose-700' }}">
+                            {{ $isPaid ? 'Lunas' : 'Belum' }}
                         </div>
                     </div>
                     @endfor
@@ -156,21 +148,21 @@
 
                 @if(auth()->user()->role === 'bendahara')
                 <!-- Tombol Aksi Bendahara Mobile -->
-                <div class="pt-0.5 flex items-center gap-1.5">
+                <div class="pt-0.5 flex items-center gap-2">
                     @if($totalPaidCount < 4)
                     <button type="button" onclick="openPayDuesModal({{ $mhs->id }}, '{{ addslashes($mhs->name) }}', '{{ $mhs->npm }}', {{ json_encode($paidWeeksList) }})" 
-                            class="flex-1 py-1.5 px-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition shadow-2xs text-center min-h-[38px] flex items-center justify-center">
+                            class="flex-1 py-1.5 px-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition text-center min-h-[38px] flex items-center justify-center">
                         Bayar Iuran
                     </button>
                     @else
-                    <div class="flex-1 py-1.5 px-2.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold rounded-lg text-center min-h-[38px] flex items-center justify-center">
+                    <span class="flex-1 text-xs font-semibold text-emerald-700 py-1.5">
                         Lunas Penuh (100%)
-                    </div>
+                    </span>
                     @endif
 
                     @if($totalPaidCount > 0)
                     <button type="button" onclick="openCancelDuesModal({{ $mhs->id }}, '{{ addslashes($mhs->name) }}', '{{ $mhs->npm }}', {{ json_encode($paidWeeksList) }})" 
-                            class="py-1.5 px-2.5 text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg text-xs font-semibold transition min-h-[38px] flex items-center justify-center">
+                            class="py-1.5 px-2.5 text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-semibold transition min-h-[38px] flex items-center justify-center">
                         Batal
                     </button>
                     @endif
@@ -185,103 +177,100 @@
             @endforelse
         </div>
 
-        <!-- Tampilan Tabel Desktop (Layar MD ke Atas) -->
-        <div class="hidden md:block overflow-x-auto custom-scrollbar w-full">
-            <table class="w-full text-left text-xs border-collapse min-w-[650px]">
-                <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase">
-                    <tr>
-                        <th class="px-4 py-3 border-r border-slate-200 w-12 text-center">No</th>
-                        <th class="px-4 py-3 border-r border-slate-200 min-w-[180px]">Mahasiswa (NPM)</th>
-                        @for($w = 1; $w <= 4; $w++)
-                        @php $isCurrentWeek = ($isCurrentRealMonth && $w === $realActiveWeek); @endphp
-                        <th class="px-3 sm:px-4 py-3 border-r border-slate-200 text-center min-w-[105px] {{ $isCurrentWeek ? 'bg-slate-900 text-white font-bold' : '' }}">
-                            <div class="flex items-center justify-center gap-1">
-                                <span>Minggu {{ $w }}</span>
-                                @if($isCurrentWeek)
-                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                                @endif
-                            </div>
-                            <div class="text-[10px] {{ $isCurrentWeek ? 'text-slate-300' : 'text-slate-500' }} font-mono font-normal mt-0.5">
-                                {{ $weekRanges[$w]['date_range'] ?? '' }} {{ $namaBulan }}
-                            </div>
-                        </th>
-                        @endfor
-                        <th class="px-4 py-3 border-r border-slate-200 text-center w-28">Status</th>
-                        @if(auth()->user()->role === 'bendahara')
-                        <th class="px-4 py-3 text-center w-36">Aksi Iuran</th>
-                        @endif
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-200">
-                    @forelse($students as $idx => $mhs)
-                    @php
-                        $paidWeeksList = $mhs->duesPayments->pluck('week_number')->map(function($w){ return (int)$w; })->toArray();
-                        $totalPaidCount = count($paidWeeksList);
-                    @endphp
-                    <tr class="hover:bg-slate-50 transition-colors">
-                        <td class="px-4 py-3 border-r border-slate-200 text-center text-slate-500 whitespace-nowrap">{{ $idx + 1 }}</td>
-                        <td class="px-4 py-3 border-r border-slate-200 min-w-[180px]">
-                            <div class="font-bold text-slate-900 leading-snug">{{ $mhs->name }}</div>
-                            <div class="text-[11px] text-slate-500 font-mono mt-0.5">{{ $mhs->npm }}</div>
-                        </td>
-
-                        @for($w = 1; $w <= 4; $w++)
-                        @php $isPaid = in_array($w, $paidWeeksList); @endphp
-                        <td class="px-4 py-3 border-r border-slate-200 text-center whitespace-nowrap">
-                            @if($isPaid)
-                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800">
-                                    Lunas
-                                </span>
-                            @else
-                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-rose-50 text-rose-600 border border-rose-200">
-                                    Belum
-                                </span>
+        <!-- Tampilan Tabel Desktop (Flat & Editorial) -->
+        <div class="hidden md:block bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <div class="overflow-x-auto custom-scrollbar w-full">
+                <table class="w-full text-left text-xs border-collapse min-w-[650px]">
+                    <thead class="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-semibold uppercase">
+                        <tr>
+                            <th class="px-4 py-3 border-r border-slate-200 w-12 text-center">No</th>
+                            <th class="px-4 py-3 border-r border-slate-200 min-w-[180px]">Mahasiswa (NPM)</th>
+                            @for($w = 1; $w <= 4; $w++)
+                            @php $isCurrentWeek = ($isCurrentRealMonth && $w === $realActiveWeek); @endphp
+                            <th class="px-3 sm:px-4 py-3 border-r border-slate-200 text-center min-w-[105px] {{ $isCurrentWeek ? 'bg-slate-900 text-white font-bold' : '' }}">
+                                <div class="flex items-center justify-center gap-1">
+                                    <span>Minggu {{ $w }}</span>
+                                    @if($isCurrentWeek)
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                    @endif
+                                </div>
+                                <div class="text-[10px] {{ $isCurrentWeek ? 'text-slate-300' : 'text-slate-500' }} font-mono font-normal mt-0.5">
+                                    {{ $weekRanges[$w]['date_range'] ?? '' }} {{ $namaBulan }}
+                                </div>
+                            </th>
+                            @endfor
+                            <th class="px-4 py-3 border-r border-slate-200 text-center w-28">Status</th>
+                            @if(auth()->user()->role === 'bendahara')
+                            <th class="px-4 py-3 text-center w-36">Aksi Iuran</th>
                             @endif
-                        </td>
-                        @endfor
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                        @forelse($students as $idx => $mhs)
+                        @php
+                            $paidWeeksList = $mhs->duesPayments->pluck('week_number')->map(function($w){ return (int)$w; })->toArray();
+                            $totalPaidCount = count($paidWeeksList);
+                        @endphp
+                        <tr class="hover:bg-slate-50/70 transition-colors">
+                            <td class="px-4 py-3 border-r border-slate-200 text-center text-slate-500 font-mono whitespace-nowrap">{{ $idx + 1 }}</td>
+                            <td class="px-4 py-3 border-r border-slate-200 min-w-[180px]">
+                                <div class="font-semibold text-slate-900 leading-snug">{{ $mhs->name }}</div>
+                                <div class="text-[11px] text-slate-500 font-mono mt-0.5">{{ $mhs->npm }}</div>
+                            </td>
 
-                        <td class="px-4 py-3 border-r border-slate-200 text-center whitespace-nowrap">
-                            <span class="inline-block px-2.5 py-1 rounded text-xs font-bold 
-                                {{ $totalPaidCount === 4 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800' }}">
-                                {{ $totalPaidCount }}/4 Minggu
-                            </span>
-                        </td>
+                            @for($w = 1; $w <= 4; $w++)
+                            @php $isPaid = in_array($w, $paidWeeksList); @endphp
+                            <td class="px-4 py-3 border-r border-slate-200 text-center whitespace-nowrap">
+                                @if($isPaid)
+                                    <span class="text-[11px] font-bold text-emerald-700">Lunas</span>
+                                @else
+                                    <span class="text-[11px] font-medium text-rose-600">Belum</span>
+                                @endif
+                            </td>
+                            @endfor
 
-                        @if(auth()->user()->role === 'bendahara')
-                        <td class="px-4 py-3 text-center whitespace-nowrap">
-                            <div class="flex items-center justify-center gap-1.5 flex-wrap">
-                                @if($totalPaidCount < 4)
-                                <button onclick="openPayDuesModal({{ $mhs->id }}, '{{ addslashes($mhs->name) }}', '{{ $mhs->npm }}', {{ json_encode($paidWeeksList) }})" 
-                                         class="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-medium rounded-lg transition shadow-2xs">
-                                     Bayar
-                                 </button>
-                                 @else
-                                 <span class="text-[11px] text-emerald-600 font-bold">Lunas 100%</span>
-                                 @endif
+                            <td class="px-4 py-3 border-r border-slate-200 text-center whitespace-nowrap">
+                                <span class="text-xs font-bold font-mono tabular-nums {{ $totalPaidCount === 4 ? 'text-emerald-700' : 'text-rose-700' }}">
+                                    {{ $totalPaidCount }}/4 Minggu
+                                </span>
+                            </td>
 
-                                 @if($totalPaidCount > 0)
-                                 <button onclick="openCancelDuesModal({{ $mhs->id }}, '{{ addslashes($mhs->name) }}', '{{ $mhs->npm }}', {{ json_encode($paidWeeksList) }})" 
-                                         class="px-2 py-1 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded text-[10px] font-semibold border border-rose-200 transition"
-                                         title="Batalkan pembayaran minggu tertentu">
-                                     Batal
-                                 </button>
-                                 @endif
-                             </div>
-                         </td>
-                         @endif
-                     </tr>
-                     @empty
-                     <tr>
-                         <td colspan="{{ auth()->user()->role === 'bendahara' ? '8' : '7' }}" class="px-4 py-10 text-center text-slate-600">
-                             <p class="text-xs font-semibold text-slate-700">Belum ada mahasiswa terdaftar pada semester ini.</p>
-                             <p class="text-[11px] text-slate-600 mt-0.5">Data iuran akan tampil otomatis setelah akun mahasiswa ditambahkan.</p>
-                         </td>
-                     </tr>
-                     @endforelse
-                 </tbody>
-             </table>
-         </div>
-     </div>
+                            @if(auth()->user()->role === 'bendahara')
+                            <td class="px-4 py-3 text-center whitespace-nowrap">
+                                <div class="flex items-center justify-center gap-2.5">
+                                    @if($totalPaidCount < 4)
+                                    <button onclick="openPayDuesModal({{ $mhs->id }}, '{{ addslashes($mhs->name) }}', '{{ $mhs->npm }}', {{ json_encode($paidWeeksList) }})" 
+                                            class="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-medium rounded-md transition">
+                                        Bayar
+                                    </button>
+                                    @else
+                                    <span class="text-[11px] text-emerald-700 font-semibold">Lunas</span>
+                                    @endif
+
+                                    @if($totalPaidCount > 0)
+                                    <button onclick="openCancelDuesModal({{ $mhs->id }}, '{{ addslashes($mhs->name) }}', '{{ $mhs->npm }}', {{ json_encode($paidWeeksList) }})" 
+                                            class="text-rose-600 hover:text-rose-800 hover:underline text-[11px] font-semibold transition"
+                                            title="Batalkan pembayaran minggu tertentu">
+                                        Batal
+                                    </button>
+                                    @endif
+                                </div>
+                            </td>
+                            @endif
+                        </tr>
+                        @empty
+                        <tr>
+                            <td colspan="{{ auth()->user()->role === 'bendahara' ? '8' : '7' }}" class="px-4 py-10 text-center text-slate-600">
+                                <p class="text-xs font-semibold text-slate-700">Belum ada mahasiswa terdaftar pada semester ini.</p>
+                                <p class="text-[11px] text-slate-600 mt-0.5">Data iuran akan tampil otomatis setelah akun mahasiswa ditambahkan.</p>
+                            </td>
+                        </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
 
 
 </div>
