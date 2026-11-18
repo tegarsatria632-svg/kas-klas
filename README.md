@@ -17,7 +17,26 @@
 - **Buku Kas Kelas**: Matriks iuran mingguan mahasiswa (M1–M4) sinkron dengan rentang tanggal kalender, pencatatan pemasukan/pengeluaran beserta bukti kuitansi, pengaturan tarif iuran, cetak nota, serta ekspor rekap ke Excel.
 - **Arsip & Rekapitulasi Kas**: Ringkasan saldo, pemasukan, dan pengeluaran berdasarkan mode *Per Bulan*, *Per Semester*, dan *Semua Periode (Semester 1–8)*.
 - **Kelola Akun & Semester**: Manajemen akun mahasiswa/pengurus, ubah role, reset password, sinkronisasi semester aktif kelas, serta kenaikan semester massal.
-- **AI Chatbot Asisten Kas**: Asisten interaktif untuk menanyakan informasi saldo, tunggakan, dan pembuatan draf pengingat iuran kas.
+
+## Fitur Unggulan: AI Chatbot Asisten Kas (CRUD & Vision)
+
+Aplikasi dilengkapi asisten AI interaktif (popup *draggable* di desktop maupun mobile) yang terhubung langsung ke database Laravel secara real-time—bukan sekadar tanya jawab teks biasa:
+
+- **Eksekusi CRUD Langsung via Chat (Two-Tier Intent Parser + Konfirmasi)**:
+  - **Bendahara (Manajemen Kas)**: Catat pemasukan/pengeluaran kas, otomatis melunasi iuran mingguan mahasiswa, edit transaksi, hapus transaksi, batalkan iuran mingguan, hingga atur tarif iuran per minggu langsung dari kolom chat.
+  - **Admin & Ketua Kelas (Akun & Semester)**: Tambah akun pengguna baru, ubah role akun, hapus akun, serta ubah semester aktif kelas via perintah bahasa alami.
+  - **Alur Konfirmasi & Audit Trail**: Setiap perintah perubahan data (CRUD) menampilkan ringkasan konfirmasi terlebih dahulu sebelum dieksekusi dan otomatis dicatat ke tabel `audit_logs`.
+- **Analisis Foto Nota/Kuitansi (AI Vision)**: Pengurus dapat mengunggah foto bukti transaksi langsung di chat untuk dibaca otomatis oleh AI, divalidasi relevansinya, dan langsung dicatat ke Buku Kas beserta lampiran fotonya.
+- **Arsitektur Dual-Provider AI (Auto-Fallback)**: Menggunakan **Groq API** sebagai provider utama dengan mekanisme *fallback* otomatis ke **OpenRouter API** jika terjadi kendala kuota atau limit.
+- **Utilitas Cerdas Berbasis Data Real-Time**:
+  - **Broadcast WhatsApp Tagihan**: Menyusun draf pengingat iuran kas siap salin ke grup WA berdasarkan daftar mahasiswa yang menunggak.
+  - **Simulasi Anggaran Kas**: Menghitung estimasi saldo dan proyeksi kecukupan dana kelas untuk rencana pengeluaran.
+  - **Tautan Rekap Excel & Jejak Audit**: Akses cepat unduhan laporan Excel dan pemantauan riwayat aktivitas sistem langsung dari chat.
+  - **Context-Aware Quick Prompts**: Pilihan tombol cepat otomatis menyesuaikan halaman yang sedang dibuka dan hak akses pengguna.
+- **Guardrails Keamanan & Moderasi**:
+  - **Kontrol Akses Ketat per Role (RBAC)**: Role `Mahasiswa` dibatasi pada mode baca (*read-only*) dan dilarang mengunggah berkas input data maupun menjalankan aksi CRUD.
+  - **Proteksi Privasi**: Menolak otomatis permintaan yang menanyakan password, hash, token, atau API key.
+  - **Moderasi Bahasa Otomatis**: Mendeteksi bahasa kasar/toxic/vulgar dengan sanksi pemblokiran akses chatbot sementara otomatis setelah 3 kali pelanggaran.
 
 ## Panduan Instalasi Lokal
 
