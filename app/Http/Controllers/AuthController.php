@@ -96,7 +96,7 @@ class AuthController extends Controller
             }
 
             return back()->withErrors([
-                'npm' => "Username atau NPM '{$inputNpm}' tidak ditemukan atau belum terdaftar. (Peringatan: Sisa kesempatan mencoba {$remaining}x lagi sebelum akun diblokir sementara).",
+                'npm' => "Username atau NPM '{$inputNpm}' tidak ditemukan atau belum terdaftar.",
             ])->withInput($request->only('npm'));
         }
 
@@ -130,7 +130,7 @@ class AuthController extends Controller
             }
 
             return back()->withErrors([
-                'password' => "Kata sandi yang Anda masukkan salah. (Peringatan: Sisa kesempatan mencoba {$remaining}x lagi sebelum akun diblokir sementara).",
+                'password' => "Kata sandi yang Anda masukkan salah.",
             ])->withInput($request->only('npm'));
         }
 
