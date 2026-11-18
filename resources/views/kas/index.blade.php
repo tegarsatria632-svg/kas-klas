@@ -59,13 +59,13 @@
 
                 @if(auth()->user()->role === 'bendahara')
                 <button type="button" 
-                        onclick="document.getElementById('modal-setting-dues-rate').classList.remove('hidden')" 
+                        onclick="openDuesRateModal()" 
                         class="px-2.5 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-lg transition"
                         title="Atur Besaran Nominal Iuran Mingguan">
                     Rp {{ number_format($duesRate, 0, ',', '.') }}/mgg
                 </button>
 
-                <button onclick="document.getElementById('modal-kas').classList.remove('hidden')" 
+                <button type="button" onclick="openKasModal()" 
                         class="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition shadow-xs">
                     Catat Transaksi
                 </button>
@@ -279,7 +279,7 @@
 @if(auth()->user()->role === 'bendahara' && !$isReadOnly)
 <div id="modal-kas" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 {{ (session('error_modal') === 'kas' || ($errors->any() && $errors->hasAny(['type', 'amount', 'date', 'description', 'proof_image']))) ? '' : 'hidden' }} p-4">
     <div class="bg-white rounded-2xl border border-slate-200 w-full max-w-md max-h-[90dvh] flex flex-col p-5 sm:p-6 shadow-xl">
-        <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 shrink-0">
+        <div data-modal-drag-handle title="Tahan dan geser untuk memindahkan posisi" class="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 shrink-0">
             <div>
                 <h3 class="text-sm font-bold text-slate-900">Catat Transaksi Kas Baru</h3>
                 <span class="text-[11px] text-slate-500 font-semibold">{{ $selectedSemester }} &bull; Kelas {{ $kelasLabel }}</span>
@@ -288,7 +288,7 @@
         </div>
 
         @if(session('error_modal') === 'kas' && $errors->any())
-        <div class="mb-3 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl shadow-2xs shrink-0">
+        <div id="modal-kas-error-box" class="mb-3 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl shadow-2xs shrink-0">
             <p class="font-bold text-rose-900 mb-1">Gagal Menyimpan Transaksi:</p>
             <ul class="list-disc pl-4 space-y-0.5 text-rose-700">
                 @foreach($errors->all() as $err)
@@ -298,13 +298,13 @@
         </div>
         @endif
 
-        <form method="POST" action="{{ route('kas.store') }}" enctype="multipart/form-data" class="space-y-4 overflow-y-auto flex-1 custom-scrollbar pr-1" onsubmit="return validateAndConfirmKas(event, this)">
+        <form id="form-kas" method="POST" action="{{ route('kas.store') }}" enctype="multipart/form-data" autocomplete="off" class="space-y-4 overflow-y-auto flex-1 custom-scrollbar pr-1" onsubmit="return validateAndConfirmKas(event, this)">
             @csrf
             <input type="hidden" name="semester" value="{{ $selectedSemester }}">
 
             <div>
                 <label class="block text-xs font-semibold text-slate-700 mb-1">Tipe Transaksi <span class="text-rose-500">*</span></label>
-                <select name="type" id="type-select" required onchange="handleTypeChange(this.value)"
+                <select name="type" id="type-select" required onchange="if(typeof handleTypeChange==='function') handleTypeChange(this.value)"
                         class="w-full text-xs px-3 py-2 border {{ $errors->has('type') ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300' }} rounded-lg focus:ring-2 focus:ring-slate-900">
                     <option value="pemasukan" {{ old('type') === 'pemasukan' ? 'selected' : '' }}>Pemasukan (Debit / Kas Masuk)</option>
                     <option value="pengeluaran" {{ old('type') === 'pengeluaran' ? 'selected' : '' }}>Pengeluaran (Kredit / Belanja Operasional)</option>
@@ -316,7 +316,7 @@
 
             <div>
                 <label class="block text-xs font-semibold text-slate-700 mb-1">Nominal (Rp) <span class="text-rose-500">*</span></label>
-                <input type="number" name="amount" id="input-amount" required min="500" value="{{ old('amount') }}" placeholder="Contoh: 50000" 
+                <input type="number" name="amount" id="input-amount" required min="500" autocomplete="off" value="{{ session('error_modal') === 'kas' ? old('amount') : '' }}" placeholder="Contoh: 50000" 
                        class="w-full text-xs px-3 py-2 border {{ $errors->has('amount') ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/20' : 'border-slate-300' }} rounded-lg focus:ring-2 focus:ring-slate-900">
                 @error('amount')
                     <p class="text-rose-600 text-[11px] mt-1 font-semibold flex items-center gap-1">
@@ -332,7 +332,7 @@
 
             <div>
                 <label class="block text-xs font-semibold text-slate-700 mb-1">Tanggal Transaksi <span class="text-rose-500">*</span></label>
-                <input type="date" name="date" required value="{{ old('date', date('Y-m-d')) }}" min="2024-01-01" max="2028-12-31" 
+                <input type="date" name="date" id="input-kas-date" required value="{{ session('error_modal') === 'kas' ? old('date', date('Y-m-d')) : date('Y-m-d') }}" min="2024-01-01" max="2028-12-31" 
                        class="w-full text-xs px-3 py-2 border {{ $errors->has('date') ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/20' : 'border-slate-300' }} rounded-lg focus:ring-2 focus:ring-slate-900">
                 @error('date')
                     <p class="text-rose-600 text-[11px] mt-1 font-semibold flex items-center gap-1">
@@ -344,7 +344,7 @@
 
             <div>
                 <label class="block text-xs font-semibold text-slate-700 mb-1">Keterangan Transaksi <span class="text-rose-500">*</span></label>
-                <input type="text" name="description" required value="{{ old('description') }}" placeholder="Contoh: Pembelian Spidol & Kebutuhan Kelas" 
+                <input type="text" name="description" id="input-kas-description" required autocomplete="off" value="{{ session('error_modal') === 'kas' ? old('description') : '' }}" placeholder="Contoh: Pembelian Spidol & Kebutuhan Kelas" 
                        class="w-full text-xs px-3 py-2 border {{ $errors->has('description') ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/20' : 'border-slate-300' }} rounded-lg focus:ring-2 focus:ring-slate-900">
                 @error('description')
                     <p class="text-rose-600 text-[11px] mt-1 font-semibold flex items-center gap-1">
@@ -358,7 +358,7 @@
                 <label class="block text-xs font-semibold text-slate-700 mb-1">
                     Upload Foto Nota / Bukti <span class="text-rose-500 font-normal">(JPG/PNG, Maks. 2MB)</span>
                 </label>
-                <input type="file" name="proof_image" accept="image/png, image/jpeg, image/jpg" 
+                <input type="file" name="proof_image" id="input-kas-proof" accept="image/png, image/jpeg, image/jpg" 
                        class="w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200">
                 @error('proof_image')
                     <p class="text-rose-600 text-[11px] mt-1 font-semibold flex items-center gap-1">
@@ -379,7 +379,7 @@
 <!-- MODAL BAYAR IURAN MINGGUAN -->
 <div id="modal-pay-dues" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 hidden p-4">
     <div class="bg-white rounded-2xl border border-slate-200 w-full max-w-md max-h-[90dvh] flex flex-col p-5 sm:p-6 shadow-xl">
-        <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 shrink-0">
+        <div data-modal-drag-handle title="Tahan dan geser untuk memindahkan posisi" class="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 shrink-0">
             <div>
                 <h3 class="text-sm font-bold text-slate-900">Pembayaran Iuran Kas Mahasiswa</h3>
                 <span class="text-[11px] text-slate-500 font-semibold">{{ $selectedSemester }} &bull; Kelas {{ $kelasLabel }}</span>
@@ -464,7 +464,7 @@
 <!-- MODAL BATALKAN IURAN MINGGUAN (BENDAHARA) -->
 <div id="modal-cancel-dues" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 hidden p-4">
     <div class="bg-white rounded-2xl border border-slate-200 w-full max-w-md max-h-[90dvh] flex flex-col p-5 sm:p-6 shadow-xl">
-        <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 shrink-0">
+        <div data-modal-drag-handle title="Tahan dan geser untuk memindahkan posisi" class="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 shrink-0">
             <div>
                 <h3 class="text-sm font-bold text-rose-600">Batalkan Status Iuran</h3>
                 <span class="text-[11px] text-slate-500 font-medium">{{ $selectedSemester }} &bull; Kelas {{ $kelasLabel }}</span>
@@ -503,7 +503,7 @@
 <!-- MODAL PENGATURAN TARIF IURAN MINGGUAN (BENDAHARA) -->
 <div id="modal-setting-dues-rate" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs {{ (session('error_modal') === 'dues_rate' || $errors->has('amount_per_week')) ? '' : 'hidden' }} p-4">
     <div class="bg-white rounded-2xl border border-slate-200 w-full max-w-sm p-6 shadow-2xl">
-        <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+        <div data-modal-drag-handle title="Tahan dan geser untuk memindahkan posisi" class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
             <div>
                 <h3 class="text-sm font-bold text-slate-900">Tarif Iuran Mingguan</h3>
                 <p class="text-[11px] text-slate-500">Atur nominal kas kelas per minggu</p>
@@ -516,7 +516,7 @@
         </div>
 
         @if(session('error_modal') === 'dues_rate' && $errors->any())
-        <div class="mb-3 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl shadow-2xs">
+        <div id="modal-dues-rate-error-box" class="mb-3 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl shadow-2xs">
             <ul class="list-disc pl-4 space-y-0.5 text-rose-700">
                 @foreach($errors->all() as $err)
                     <li>{{ $err }}</li>
@@ -525,7 +525,7 @@
         </div>
         @endif
 
-        <form method="POST" action="{{ route('kas.updateDuesRate') }}" class="space-y-4" onsubmit="return confirm('Apakah Anda yakin ingin memperbarui tarif uang kas mingguan menjadi Rp ' + parseInt(document.getElementById('input-setting-dues-rate').value || 0).toLocaleString('id-ID') + ' per minggu?')">
+        <form id="form-setting-dues-rate" method="POST" action="{{ route('kas.updateDuesRate') }}" autocomplete="off" class="space-y-4" onsubmit="return confirm('Apakah Anda yakin ingin memperbarui tarif uang kas mingguan menjadi Rp ' + parseInt(document.getElementById('input-setting-dues-rate').value || 0).toLocaleString('id-ID') + ' per minggu?')">
             @csrf
             <div>
                 <label class="block text-xs font-semibold text-slate-700 mb-1">
@@ -536,7 +536,9 @@
                     <input type="number" 
                            name="amount_per_week" 
                            id="input-setting-dues-rate" 
-                           value="{{ old('amount_per_week', $duesRate) }}" 
+                           autocomplete="off"
+                           value="{{ session('error_modal') === 'dues_rate' ? old('amount_per_week') : '' }}" 
+                           placeholder="Contoh: {{ $duesRate }}"
                            min="500" 
                            max="1000000"
                            step="500" 
@@ -580,6 +582,38 @@
 
 @push('scripts')
 <script>
+
+    function openKasModal() {
+        const form = document.getElementById('form-kas');
+        if (form) form.reset();
+        const typeEl = document.getElementById('type-select');
+        if (typeEl) typeEl.value = 'pemasukan';
+        const amtEl = document.getElementById('input-amount');
+        if (amtEl) amtEl.value = '';
+        const descEl = document.getElementById('input-kas-description');
+        if (descEl) descEl.value = '';
+        const proofEl = document.getElementById('input-kas-proof');
+        if (proofEl) proofEl.value = '';
+        const dateEl = document.getElementById('input-kas-date');
+        if (dateEl) dateEl.value = '{{ date("Y-m-d") }}';
+        const warnEl = document.getElementById('liquidity-warning');
+        if (warnEl) warnEl.classList.add('hidden');
+        const errBox = document.getElementById('modal-kas-error-box');
+        if (errBox) errBox.classList.add('hidden');
+        const modal = document.getElementById('modal-kas');
+        if (modal) modal.classList.remove('hidden');
+    }
+
+    function openDuesRateModal() {
+        const form = document.getElementById('form-setting-dues-rate');
+        if (form) form.reset();
+        const inputEl = document.getElementById('input-setting-dues-rate');
+        if (inputEl) inputEl.value = '';
+        const errBox = document.getElementById('modal-dues-rate-error-box');
+        if (errBox) errBox.classList.add('hidden');
+        const modal = document.getElementById('modal-setting-dues-rate');
+        if (modal) modal.classList.remove('hidden');
+    }
 
     function validateAndConfirmKas(e, form) {
         const type = form.type.value;

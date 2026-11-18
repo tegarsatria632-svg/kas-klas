@@ -1031,7 +1031,7 @@
 <div id="chatbot-image-modal" style="display:none; position:fixed; inset:0; z-index:999999; background:rgba(15, 23, 42, 0.85); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); align-items:center; justify-content:center; padding:16px;" onclick="closeChatbotImageModal(event)">
     <div style="position:relative; max-width:92vw; max-height:92vh; display:flex; flex-direction:column; align-items:center; background:#1e293b; border-radius:16px; border:1px solid rgba(255,255,255,0.15); box-shadow:0 25px 50px -12px rgba(0,0,0,0.7); overflow:hidden;" onclick="event.stopPropagation()">
         <!-- Header Modal -->
-        <div style="width:100%; display:flex; align-items:center; justify-content:space-between; padding:10px 16px; background:#0f172a; border-bottom:1px solid rgba(255,255,255,0.1);">
+        <div data-modal-drag-handle title="Tahan dan geser untuk memindahkan posisi" style="width:100%; display:flex; align-items:center; justify-content:space-between; padding:10px 16px; background:#0f172a; border-bottom:1px solid rgba(255,255,255,0.1);">
             <div style="display:flex; align-items:center; gap:8px; color:#f8fafc; font-size:12.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:80vw;">
                 <span>🖼️</span>
                 <span id="chatbot-image-modal-caption">Pratinjau Foto Berkas</span>

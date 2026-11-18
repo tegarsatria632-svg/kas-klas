@@ -23,7 +23,7 @@
         </div>
 
         <div class="flex items-center gap-2.5 self-start lg:self-auto">
-            <button onclick="document.getElementById('modal-user').classList.remove('hidden')" 
+            <button type="button" onclick="openUserModal()" 
                     class="px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl shadow-xs transition min-h-[44px]">
                 Tambah Akun Baru
             </button>
@@ -247,7 +247,7 @@
 <!-- MODAL KENAIKAN SEMESTER MASSAL (S1 INFORMATIKA UPS TEGAL) -->
 <div id="modal-promote" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 hidden p-4">
     <div class="bg-white rounded-xl border border-slate-200 w-full max-w-lg p-6 shadow-2xl">
-        <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+        <div data-modal-drag-handle title="Tahan dan geser untuk memindahkan posisi" class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
             <div>
                 <h3 class="text-base font-bold text-slate-900">Promosi Kenaikan Semester Massal S1</h3>
                 <span class="text-xs text-blue-600 font-semibold">Prodi Informatika &bull; FTIK Universitas Pancasakti Tegal</span>
@@ -255,7 +255,7 @@
             <button onclick="document.getElementById('modal-promote').classList.add('hidden')" class="text-slate-500 hover:text-slate-800 text-xl font-bold p-1 cursor-pointer" aria-label="Tutup modal promosi semester">&times;</button>
         </div>
 
-        <form method="POST" action="{{ route('admin.users.promoteSemester') }}" class="space-y-4" onsubmit="return confirm('PERINGATAN BESAR: Anda akan menaikkan semester seluruh mahasiswa aktif S1 Informatika. Mahasiswa Semester 8 akan berstatus Lulus/Alumni. Lanjutkan proses ini?')">
+        <form method="POST" action="{{ route('admin.users.promoteSemester') }}" autocomplete="off" class="space-y-4" onsubmit="return confirm('PERINGATAN BESAR: Anda akan menaikkan semester seluruh mahasiswa aktif S1 Informatika. Mahasiswa Semester 8 akan berstatus Lulus/Alumni. Lanjutkan proses ini?')">
             @csrf
 
             <!-- Penjelasan Alur Kenaikan -->
@@ -271,9 +271,9 @@
 
             <div>
                 <label class="block text-xs font-semibold text-slate-700 mb-1">Tahun Ajaran / Periode Akademik Baru</label>
-                <input type="text" name="tahun_ajaran_baru" required 
-                       value="{{ date('Y') }}/{{ date('Y') + 1 }} Ganjil"
-                       placeholder="Contoh: 2024/2025 Genap atau 2025/2026 Ganjil" 
+                <input type="text" name="tahun_ajaran_baru" required autocomplete="off"
+                       value=""
+                       placeholder="Contoh: {{ date('Y') }}/{{ date('Y') + 1 }} Ganjil" 
                        class="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900">
             </div>
 
@@ -304,13 +304,13 @@
 <!-- MODAL TAMBAH AKUN BARU -->
 <div id="modal-user" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 {{ (session('error_modal') === 'user' || ($errors->any() && $errors->hasAny(['name', 'npm', 'password', 'role', 'semester']))) ? '' : 'hidden' }} p-4">
     <div class="bg-white rounded-xl border border-slate-200 w-full max-w-md max-h-[90dvh] flex flex-col p-5 sm:p-6 shadow-xl">
-        <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 shrink-0">
+        <div data-modal-drag-handle title="Tahan dan geser untuk memindahkan posisi" class="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 shrink-0">
             <h3 class="text-sm font-bold text-slate-900">Buat Akun Mahasiswa / Pengurus Baru</h3>
             <button onclick="document.getElementById('modal-user').classList.add('hidden')" class="text-slate-500 hover:text-slate-800 text-xl font-bold p-1 cursor-pointer" aria-label="Tutup modal buat akun">&times;</button>
         </div>
 
         @if(session('error_modal') === 'user' && $errors->any())
-        <div class="mb-3 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl shadow-2xs shrink-0">
+        <div id="modal-user-error-box" class="mb-3 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl shadow-2xs shrink-0">
             <p class="font-bold text-rose-900 mb-1">Gagal Menambahkan Akun:</p>
             <ul class="list-disc pl-4 space-y-0.5 text-rose-700">
                 @foreach($errors->all() as $err)
@@ -320,11 +320,11 @@
         </div>
         @endif
 
-        <form method="POST" action="{{ route('admin.users.store') }}" class="space-y-4 overflow-y-auto flex-1 custom-scrollbar pr-1" onsubmit="return confirm('Apakah Anda yakin data akun pengguna baru sudah benar dan ingin disimpan?')">
+        <form id="form-create-user" method="POST" action="{{ route('admin.users.store') }}" autocomplete="off" class="space-y-4 overflow-y-auto flex-1 custom-scrollbar pr-1" onsubmit="return confirm('Apakah Anda yakin data akun pengguna baru sudah benar dan ingin disimpan?')">
             @csrf
             <div>
                 <label class="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap <span class="text-rose-500">*</span></label>
-                <input type="text" name="name" required value="{{ old('name') }}" placeholder="Nama lengkap mahasiswa" 
+                <input type="text" name="name" id="create-user-name" required autocomplete="off" value="{{ session('error_modal') === 'user' ? old('name') : '' }}" placeholder="Nama lengkap mahasiswa" 
                        class="w-full text-xs px-3 py-2 border {{ $errors->has('name') ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/20' : 'border-slate-300' }} rounded-lg focus:ring-2 focus:ring-slate-900">
                 @error('name')
                     <p class="text-rose-600 text-[11px] mt-1 font-semibold flex items-center gap-1">
@@ -335,7 +335,7 @@
             </div>
             <div>
                 <label class="block text-xs font-semibold text-slate-700 mb-1">NPM (Nomor Pokok Mahasiswa) <span class="text-rose-500">*</span></label>
-                <input type="text" name="npm" required value="{{ old('npm') }}" placeholder="Nomor Pokok Mahasiswa UPS Tegal" 
+                <input type="text" name="npm" id="create-user-npm" required autocomplete="off" value="{{ session('error_modal') === 'user' ? old('npm') : '' }}" placeholder="Nomor Pokok Mahasiswa UPS Tegal" 
                        class="w-full text-xs px-3 py-2 border {{ $errors->has('npm') ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/20' : 'border-slate-300' }} rounded-lg focus:ring-2 focus:ring-slate-900">
                 @error('npm')
                     <p class="text-rose-600 text-[11px] mt-1 font-semibold flex items-center gap-1">
@@ -346,7 +346,7 @@
             </div>
             <div>
                 <label class="block text-xs font-semibold text-slate-700 mb-1">Kata Sandi Awal <span class="text-rose-500">*</span></label>
-                <input type="password" name="password" required minlength="6" placeholder="Minimal 6 karakter" 
+                <input type="password" name="password" id="create-user-password" required minlength="6" autocomplete="new-password" value="" placeholder="Minimal 6 karakter" 
                        class="w-full text-xs px-3 py-2 border {{ $errors->has('password') ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/20' : 'border-slate-300' }} rounded-lg focus:ring-2 focus:ring-slate-900">
                 @error('password')
                     <p class="text-rose-600 text-[11px] mt-1 font-semibold flex items-center gap-1">
@@ -358,7 +358,7 @@
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block text-xs font-semibold text-slate-700 mb-1">Peran / Role <span class="text-rose-500">*</span></label>
-                    <select name="role" required class="w-full text-xs px-3 py-2 border {{ $errors->has('role') ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300' }} rounded-lg focus:ring-2 focus:ring-slate-900">
+                    <select name="role" id="create-user-role" required class="w-full text-xs px-3 py-2 border {{ $errors->has('role') ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300' }} rounded-lg focus:ring-2 focus:ring-slate-900">
                         <option value="mahasiswa" {{ old('role') === 'mahasiswa' ? 'selected' : '' }}>Mahasiswa</option>
                         <option value="bendahara" {{ old('role') === 'bendahara' ? 'selected' : '' }}>Bendahara</option>
                         <option value="ketua" {{ old('role') === 'ketua' ? 'selected' : '' }}>Ketua Kelas</option>
@@ -367,7 +367,7 @@
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-slate-700 mb-1">Semester S1 <span class="text-rose-500">*</span></label>
-                    <select name="semester" required class="w-full text-xs px-3 py-2 border {{ $errors->has('semester') ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300' }} rounded-lg focus:ring-2 focus:ring-slate-900">
+                    <select name="semester" id="create-user-semester" required class="w-full text-xs px-3 py-2 border {{ $errors->has('semester') ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300' }} rounded-lg focus:ring-2 focus:ring-slate-900">
                         @foreach($semesters as $sem)
                             <option value="{{ $sem }}" {{ (old('semester') ? old('semester') === $sem : $sem === $activeClassSemester) ? 'selected' : '' }}>{{ $sem }}</option>
                         @endforeach
@@ -385,7 +385,7 @@
 <!-- MODAL UPDATE STATUS AKADEMIK INDIVIDU -->
 <div id="modal-academic" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 hidden p-4">
     <div class="bg-white rounded-xl border border-slate-200 w-full max-w-sm p-6 shadow-xl">
-        <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+        <div data-modal-drag-handle title="Tahan dan geser untuk memindahkan posisi" class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
             <h3 class="text-sm font-bold text-slate-900">Perbarui Status Akademik</h3>
             <button onclick="document.getElementById('modal-academic').classList.add('hidden')" class="text-slate-500 hover:text-slate-800 text-xl font-bold p-1 cursor-pointer" aria-label="Tutup modal status akademik">&times;</button>
         </div>
@@ -437,11 +437,16 @@
 <!-- MODAL RESET PASSWORD -->
 <div id="modal-reset" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 {{ (session('error_modal') === 'reset_password' || $errors->has('new_password')) ? '' : 'hidden' }} p-4">
     <div class="bg-white rounded-xl border border-slate-200 w-full max-w-sm p-6 shadow-xl">
-        <h3 class="text-sm font-bold text-slate-900 mb-1">Reset Password</h3>
-        <p id="reset-user-name" class="text-xs text-slate-500 mb-4"></p>
+        <div data-modal-drag-handle title="Tahan dan geser untuk memindahkan posisi" class="flex items-start justify-between pb-3 mb-3 border-b border-slate-100">
+            <div>
+                <h3 class="text-sm font-bold text-slate-900">Reset Password</h3>
+                <p id="reset-user-name" class="text-xs text-slate-500 mt-0.5"></p>
+            </div>
+            <button type="button" onclick="document.getElementById('modal-reset').classList.add('hidden')" class="text-slate-500 hover:text-slate-800 text-xl font-bold p-1 leading-none cursor-pointer" aria-label="Tutup modal reset password">&times;</button>
+        </div>
 
         @if(session('error_modal') === 'reset_password' && $errors->any())
-        <div class="mb-3 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl shadow-2xs">
+        <div id="modal-reset-error-box" class="mb-3 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl shadow-2xs">
             <ul class="list-disc pl-4 space-y-0.5 text-rose-700">
                 @foreach($errors->all() as $err)
                     <li>{{ $err }}</li>
@@ -450,12 +455,12 @@
         </div>
         @endif
 
-        <form id="form-reset" method="POST" action="" class="space-y-3" onsubmit="return confirm('Apakah Anda yakin ingin menyetel ulang kata sandi pengguna ini?')">
+        <form id="form-reset" method="POST" action="" autocomplete="off" class="space-y-3" onsubmit="return confirm('Apakah Anda yakin ingin menyetel ulang kata sandi pengguna ini?')">
             @csrf
             @method('PATCH')
             <div>
                 <label class="block text-xs font-semibold text-slate-700 mb-1">Kata Sandi Baru <span class="text-rose-500">*</span></label>
-                <input type="password" name="new_password" required minlength="6" placeholder="Minimal 6 karakter" 
+                <input type="password" name="new_password" id="reset-new-password" required minlength="6" autocomplete="new-password" value="" placeholder="Minimal 6 karakter" 
                        class="w-full text-xs px-3 py-2 border {{ $errors->has('new_password') ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/20' : 'border-slate-300' }} rounded-lg focus:ring-2 focus:ring-slate-900">
                 @error('new_password')
                     <p class="text-rose-600 text-[11px] mt-1 font-semibold flex items-center gap-1">
@@ -474,9 +479,46 @@
 
 @push('scripts')
 <script>
+    function clearCreateUserFields() {
+        const form = document.getElementById('form-create-user');
+        if (form) form.reset();
+        ['create-user-name', 'create-user-npm', 'create-user-password'].forEach(function(id) {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        const roleEl = document.getElementById('create-user-role');
+        if (roleEl) roleEl.value = 'mahasiswa';
+        const semEl = document.getElementById('create-user-semester');
+        if (semEl) semEl.value = @json($activeClassSemester);
+    }
+
+    function openUserModal() {
+        clearCreateUserFields();
+        const errBox = document.getElementById('modal-user-error-box');
+        if (errBox) errBox.classList.add('hidden');
+        document.getElementById('modal-user').classList.remove('hidden');
+        // Antisipasi autofill browser yang tertunda setelah modal terbuka
+        setTimeout(function() {
+            const nameEl = document.getElementById('create-user-name');
+            const npmEl = document.getElementById('create-user-npm');
+            const pwdEl = document.getElementById('create-user-password');
+            if (nameEl && document.activeElement !== nameEl) nameEl.value = '';
+            if (npmEl && document.activeElement !== npmEl) npmEl.value = '';
+            if (pwdEl && document.activeElement !== pwdEl) pwdEl.value = '';
+        }, 50);
+    }
+
     function openResetModal(userId, userName, userNpm) {
         document.getElementById('reset-user-name').innerText = 'Setel ulang sandi untuk ' + userName + ' (' + userNpm + ')';
-        document.getElementById('form-reset').action = '/admin/users/' + userId + '/reset-password';
+        const form = document.getElementById('form-reset');
+        if (form) {
+            form.reset();
+            form.action = '/admin/users/' + userId + '/reset-password';
+        }
+        const pwdEl = document.getElementById('reset-new-password');
+        if (pwdEl) pwdEl.value = '';
+        const errBox = document.getElementById('modal-reset-error-box');
+        if (errBox) errBox.classList.add('hidden');
         document.getElementById('modal-reset').classList.remove('hidden');
     }
 
@@ -489,6 +531,18 @@
         document.getElementById('academic-tahun-ajaran').value = u.tahun_ajaran || '2024/2025';
         document.getElementById('modal-academic').classList.remove('hidden');
     }
+
+    @if(session('error_modal') !== 'user')
+    document.addEventListener('DOMContentLoaded', function() {
+        clearCreateUserFields();
+        setTimeout(function() {
+            const modal = document.getElementById('modal-user');
+            if (modal && modal.classList.contains('hidden')) {
+                clearCreateUserFields();
+            }
+        }, 300);
+    });
+    @endif
 
     // Keyboard navigation: Escape key closes any open modal (R-32)
     document.addEventListener('keydown', function(e) {

@@ -47,6 +47,21 @@
             outline-offset: 2px !important;
         }
 
+        /* Draggable modal header affordances */
+        [data-modal-drag-handle] {
+            cursor: grab;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+        [data-modal-drag-handle].is-modal-dragging,
+        .is-modal-dragging [data-modal-drag-handle] {
+            cursor: grabbing !important;
+        }
+        .is-modal-dragging {
+            transition: none !important;
+        }
+
         /* Respect prefers-reduced-motion (R-18, R-37, WCAG 2.3.3) */
         @media (prefers-reduced-motion: reduce) {
             *, ::before, ::after {
@@ -246,9 +261,9 @@
     <!-- Modal Ganti Kata Sandi Mandiri (User) -->
     @if(auth()->check())
     <div id="modal-change-password" class="fixed inset-0 z-50 hidden overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md max-h-[90dvh] flex flex-col overflow-hidden transform transition-all">
+        <div class="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md max-h-[90dvh] flex flex-col overflow-hidden">
             <!-- Modal Header -->
-            <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
+            <div data-modal-drag-handle title="Tahan dan geser untuk memindahkan posisi" class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
                 <div>
                     <h3 class="text-sm font-bold text-slate-900">Pengaturan Sandi Akun</h3>
                     <p class="text-[11px] text-slate-600">Ubah kata sandi login untuk akun Anda sendiri</p>
@@ -261,7 +276,7 @@
             </div>
 
             <!-- Modal Form -->
-            <form method="POST" action="{{ route('password.update') }}" class="p-5 space-y-4 overflow-y-auto flex-1 custom-scrollbar" onsubmit="return validateAndConfirmPasswordChange(event, this)">
+            <form id="form-change-password" method="POST" action="{{ route('password.update') }}" autocomplete="off" class="p-5 space-y-4 overflow-y-auto flex-1 custom-scrollbar" onsubmit="return validateAndConfirmPasswordChange(event, this)">
                 @csrf
 
                 <!-- User Info Card -->
@@ -295,6 +310,8 @@
                                name="current_password" 
                                id="pwd_current" 
                                required 
+                               autocomplete="new-password"
+                               value=""
                                placeholder="Masukkan sandi aktif Anda"
                                class="w-full text-xs rounded-lg border {{ $errors->has('current_password') ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/20' : 'border-slate-300' }} px-3 py-2 pr-10 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                         <button type="button" 
@@ -326,6 +343,8 @@
                                id="pwd_new" 
                                required 
                                minlength="6"
+                               autocomplete="new-password"
+                               value=""
                                placeholder="Minimal 6 karakter"
                                class="w-full text-xs rounded-lg border {{ $errors->has('new_password') ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/20' : 'border-slate-300' }} px-3 py-2 pr-10 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                         <button type="button" 
@@ -358,6 +377,8 @@
                                id="pwd_confirm" 
                                required 
                                minlength="6"
+                               autocomplete="new-password"
+                               value=""
                                placeholder="Ketik ulang sandi baru"
                                class="w-full text-xs rounded-lg border {{ $errors->has('new_password_confirmation') ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/20' : 'border-slate-300' }} px-3 py-2 pr-10 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                         <button type="button" 
@@ -488,9 +509,20 @@
         })();
 
         // Modal Pengaturan Sandi Mandiri (User)
-        function openChangePasswordModal() {
+        function openChangePasswordModal(preserveErrors) {
             const modal = document.getElementById('modal-change-password');
             if (modal) {
+                if (!preserveErrors) {
+                    const form = document.getElementById('form-change-password');
+                    if (form) form.reset();
+                    ['pwd_current', 'pwd_new', 'pwd_confirm'].forEach(function(id) {
+                        const el = document.getElementById(id);
+                        if (el) {
+                            el.value = '';
+                            el.type = 'password';
+                        }
+                    });
+                }
                 modal.classList.remove('hidden');
                 document.body.style.overflow = 'hidden';
             }
@@ -547,11 +579,118 @@
             }
         });
 
-        @if((isset($errors) && ($errors->has('current_password') || $errors->has('new_password'))) || session('error_modal') === 'change_password')
+        @if((isset($errors) && $errors->has('current_password')) || session('error_modal') === 'change_password')
         document.addEventListener('DOMContentLoaded', function() {
-            openChangePasswordModal();
+            openChangePasswordModal(true);
         });
         @endif
+
+        // Global Draggable Modal Engine (Mouse & Touch Pointer Events untuk seluruh Pop-up)
+        (function initDraggableModals() {
+            function makeModalDraggable(overlay) {
+                if (!overlay || overlay.dataset.dragBound === '1') return;
+                const dialog = overlay.firstElementChild;
+                if (!dialog) return;
+
+                const handle = dialog.querySelector('[data-modal-drag-handle]') || dialog.firstElementChild;
+                if (!handle) return;
+
+                overlay.dataset.dragBound = '1';
+                handle.setAttribute('data-modal-drag-handle', '');
+                if (!handle.getAttribute('title')) {
+                    handle.setAttribute('title', 'Tahan dan geser untuk memindahkan posisi');
+                }
+
+                let dragging = false;
+                let startPointerX = 0;
+                let startPointerY = 0;
+                let baseX = 0;
+                let baseY = 0;
+                let minX = -Infinity;
+                let maxX = Infinity;
+                let minY = -Infinity;
+                let maxY = Infinity;
+
+                dialog._dragX = 0;
+                dialog._dragY = 0;
+
+                function resetPosition() {
+                    dialog._dragX = 0;
+                    dialog._dragY = 0;
+                    dialog.style.transform = '';
+                    dialog.classList.remove('is-modal-dragging');
+                    handle.classList.remove('is-modal-dragging');
+                }
+
+                handle.addEventListener('pointerdown', function(e) {
+                    if (e.pointerType === 'mouse' && e.button !== 0) return;
+                    if (e.target.closest('button, a, input, select, textarea, label')) return;
+
+                    dragging = true;
+                    startPointerX = e.clientX;
+                    startPointerY = e.clientY;
+                    baseX = dialog._dragX || 0;
+                    baseY = dialog._dragY || 0;
+
+                    const rect = dialog.getBoundingClientRect();
+                    const visibleMarginX = Math.min(80, rect.width * 0.4);
+                    const topMargin = 8;
+                    const bottomKeep = 48;
+
+                    minX = baseX - (rect.right - visibleMarginX);
+                    maxX = baseX + (window.innerWidth - rect.left - visibleMarginX);
+                    minY = baseY - (rect.top - topMargin);
+                    maxY = baseY + (window.innerHeight - rect.top - bottomKeep);
+
+                    dialog.classList.add('is-modal-dragging');
+                    handle.classList.add('is-modal-dragging');
+
+                    try { handle.setPointerCapture(e.pointerId); } catch(err) {}
+                    e.preventDefault();
+                });
+
+                handle.addEventListener('pointermove', function(e) {
+                    if (!dragging) return;
+                    const nextX = Math.max(minX, Math.min(maxX, baseX + (e.clientX - startPointerX)));
+                    const nextY = Math.max(minY, Math.min(maxY, baseY + (e.clientY - startPointerY)));
+                    dialog._dragX = nextX;
+                    dialog._dragY = nextY;
+                    dialog.style.transform = 'translate3d(' + nextX + 'px, ' + nextY + 'px, 0)';
+                });
+
+                function endDrag(e) {
+                    if (!dragging) return;
+                    dragging = false;
+                    dialog.classList.remove('is-modal-dragging');
+                    handle.classList.remove('is-modal-dragging');
+                    try { handle.releasePointerCapture(e.pointerId); } catch(err) {}
+                }
+
+                handle.addEventListener('pointerup', endDrag);
+                handle.addEventListener('pointercancel', endDrag);
+
+                // Reset posisi ke tengah setiap kali modal ditutup / dibuka kembali
+                let wasHidden = overlay.classList.contains('hidden') || overlay.style.display === 'none';
+                const observer = new MutationObserver(function() {
+                    const isHidden = overlay.classList.contains('hidden') || overlay.style.display === 'none';
+                    if (isHidden !== wasHidden) {
+                        wasHidden = isHidden;
+                        resetPosition();
+                    }
+                });
+                observer.observe(overlay, { attributes: true, attributeFilter: ['class', 'style'] });
+            }
+
+            function bindAllModals() {
+                document.querySelectorAll('[id^="modal-"], #chatbot-image-modal').forEach(makeModalDraggable);
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', bindAllModals);
+            } else {
+                bindAllModals();
+            }
+        })();
 
         // Anti-419: Auto-Refresh CSRF Token & Mitigasi Mobile BFCache
         function refreshCsrfToken(forceReloadIfFailed) {
