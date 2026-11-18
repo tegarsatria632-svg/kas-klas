@@ -140,20 +140,21 @@ class ArsipKasController extends Controller
             }
         }
 
-        // Data Mahasiswa & Rekap Iuran
-        $studentsQuery = User::whereIn('role', ['mahasiswa', 'admin', 'ketua', 'bendahara'])
-            ->orderBy('npm', 'asc');
+        // Data Mahasiswa & Rekap Iuran (Hanya diperlukan pada mode bulan & semua periode)
+        $students = collect();
+        $totalPaidStudentsInPeriod = 0;
+        $totalUnpaidStudentsInPeriod = 0;
 
         if ($periodMode === 'bulan') {
-            $students = $studentsQuery->with(['duesPayments' => function ($q) use ($selectedSemester, $selectedMonth, $selectedYear) {
-                $q->where('semester', $selectedSemester)
-                  ->where('month', $selectedMonth)
-                  ->where('year', $selectedYear);
-            }])->get();
+            $students = User::whereIn('role', ['mahasiswa', 'admin', 'ketua', 'bendahara'])
+                ->orderBy('npm', 'asc')
+                ->with(['duesPayments' => function ($q) use ($selectedSemester, $selectedMonth, $selectedYear) {
+                    $q->where('semester', $selectedSemester)
+                      ->where('month', $selectedMonth)
+                      ->where('year', $selectedYear);
+                }])->get();
 
             $targetWeeks = range(1, 4); // Selalu 4 minggu per bulan sesuai menu kas
-            $totalPaidStudentsInPeriod = 0;
-            $totalUnpaidStudentsInPeriod = 0;
             foreach ($students as $st) {
                 $paidCount = $st->duesPayments->count();
                 if ($paidCount >= count($targetWeeks)) {
@@ -162,15 +163,12 @@ class ArsipKasController extends Controller
                     $totalUnpaidStudentsInPeriod++;
                 }
             }
-        } else {
-            $students = $studentsQuery->with(['duesPayments' => function ($q) use ($periodMode, $selectedSemester) {
-                if ($periodMode === 'semester') {
-                    $q->where('semester', $selectedSemester);
-                }
-            }])->get();
+        } elseif ($periodMode === 'semua') {
+            $students = User::whereIn('role', ['mahasiswa', 'admin', 'ketua', 'bendahara'])
+                ->orderBy('npm', 'asc')
+                ->with('duesPayments')
+                ->get();
 
-            $totalPaidStudentsInPeriod = 0;
-            $totalUnpaidStudentsInPeriod = 0;
             foreach ($students as $st) {
                 if ($st->duesPayments->count() > 0) {
                     $totalPaidStudentsInPeriod++;

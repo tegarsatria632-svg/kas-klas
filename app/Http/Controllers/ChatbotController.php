@@ -46,18 +46,15 @@ class ChatbotController extends Controller
      * - Two-Tier Action Extractor: Regex Cepat + AI Intent Parser
      * - Eksekusi CRUD Langsung ke Database (Tersinkronisasi Real-Time untuk Semua Pengguna)
      * - Dual-Provider AI: Groq Primary -> OpenRouter Backup
-     * - Hak Akses Ketat per Role (Admin: Akun/Semester, Bendahara: Kas, Ketua: Inventaris, Mahasiswa: Read-Only)
+     * - Hak Akses Ketat per Role (Admin/Ketua: Akun & Semester, Bendahara: Kas, Mahasiswa: Read-Only)
      */
     public function chat(Request $request)
     {
         $request->validate([
-            'message' => ['nullable', 'string', 'max:1000'],
-            'image' => ['nullable', 'file', 'image', 'mimes:jpeg,png,jpg', 'max:5120'],
+            'message' => ['required', 'string', 'max:1000'],
         ], [
+            'message.required' => 'Pesan chatbot tidak boleh kosong.',
             'message.max' => 'Pesan chatbot terlalu panjang (maksimal 1.000 karakter).',
-            'image.image' => 'Berkas yang diunggah harus berupa file gambar.',
-            'image.mimes' => 'Format foto harus berupa JPG, JPEG, atau PNG.',
-            'image.max' => 'Ukuran berkas gambar maksimal 5 MB.',
         ]);
 
         $user = $request->user() ?: auth()->user();
@@ -70,10 +67,10 @@ class ChatbotController extends Controller
 
         $userMessage = trim((string) $request->input('message', ''));
 
-        if (empty($userMessage) && !$request->hasFile('image')) {
+        if (empty($userMessage)) {
             return response()->json([
                 'success' => false,
-                'reply' => 'Pesan atau berkas foto tidak boleh kosong.',
+                'reply' => 'Pesan tidak boleh kosong.',
             ], 422);
         }
 
@@ -105,49 +102,12 @@ class ChatbotController extends Controller
             ], 403);
         }
 
-        // 0.5 Guardrail Role: Mahasiswa DILARANG mengirim berkas/gambar penginputan data
-        if ($request->hasFile('image') && $user->role === 'mahasiswa') {
-            return response()->json([
-                'success' => true,
-                'reply' => "❌ **Akses Ditolak**: Mohon maaf, fitur pengiriman gambar atau berkas bukti transaksi hanya disediakan untuk pengurus kelas (Super Admin, Bendahara, dan Ketua Kelas). Role **Mahasiswa** tidak memiliki akses untuk mengunggah berkas penginputan data.",
-                'action_executed' => false,
-            ]);
-        }
-
         // 1. Guardrail Keamanan & Etika: Privasi Kredensial & Moderasi Toxic/Vulgar (Batas 3x Blokir Sementara)
-        if (!empty($userMessage)) {
-            $moderationResult = $this->handleModerationGuardrails($userMessage, $user);
-            if ($moderationResult !== null) {
-                $httpStatus = $moderationResult['http_status'] ?? 200;
-                unset($moderationResult['http_status']);
-                return response()->json($moderationResult, $httpStatus);
-            }
-        }
-
-        // 1.5 Penanganan Berkas Gambar/Nota yang Diunggah Pengguna Berhak Akses
-        if ($request->hasFile('image')) {
-            $imageResult = $this->handleUploadedFileAnalysis($request->file('image'), $userMessage, $user);
-            if ($imageResult !== null) {
-                $replyText = is_array($imageResult) ? ($imageResult['reply'] ?? '') : (string) $imageResult;
-                $isConfirmation = is_array($imageResult) ? ($imageResult['is_confirmation'] ?? false) : false;
-                $isSuccess = str_starts_with(trim($replyText), '✅');
-
-                // Simpan riwayat interaksi ke session
-                $history = session('chatbot_history', []);
-                $history[] = ['role' => 'user', 'content' => $userMessage ?: '[Mengunggah Berkas Foto/Nota]'];
-                $history[] = ['role' => 'assistant', 'content' => $replyText];
-                if (count($history) > 12) {
-                    $history = array_slice($history, -12);
-                }
-                session(['chatbot_history' => $history]);
-
-                return response()->json([
-                    'success' => true,
-                    'reply' => $replyText,
-                    'action_executed' => $isSuccess,
-                    'is_confirmation' => $isConfirmation,
-                ]);
-            }
+        $moderationResult = $this->handleModerationGuardrails($userMessage, $user);
+        if ($moderationResult !== null) {
+            $httpStatus = $moderationResult['http_status'] ?? 200;
+            unset($moderationResult['http_status']);
+            return response()->json($moderationResult, $httpStatus);
         }
 
         // 2. Deteksi dan Eksekusi Aksi CRUD dengan Sistem Konfirmasi Ketat
@@ -264,299 +224,11 @@ class ChatbotController extends Controller
     {
         session()->forget('chatbot_history');
         session()->forget('chatbot_pending_action');
-        session()->forget('chatbot_pending_uploaded_proof');
 
         return response()->json([
             'success' => true,
             'message' => 'Riwayat percakapan berhasil dihapus.',
         ]);
-    }
-
-    /**
-     * Memproses dan menganalisis berkas foto/nota yang diunggah pengguna.
-     * AI mendeteksi apakah berkas relevan dengan kas atau inventaris kelas.
-     * Jika tidak relevan -> ditolak dan berkas dihapus.
-     * Jika relevan -> validasi data & minta konfirmasi pengguna sebelum simpan ke database.
-     */
-    private function handleUploadedFileAnalysis($file, $userMessage, $user)
-    {
-        $userRole = $user->role;
-        $userRoleLabel = $this->getRoleLabel($userRole);
-
-        // Mahasiswa dilarang keras mengunggah berkas
-        if ($userRole === 'mahasiswa') {
-            return [
-                'reply' => "❌ **Akses Ditolak**: Mohon maaf, fitur pengiriman gambar atau berkas bukti transaksi hanya disediakan untuk pengurus kelas (Super Admin, Bendahara, dan Ketua Kelas). Role **Mahasiswa** tidak memiliki akses untuk mengunggah berkas penginputan data.",
-                'is_confirmation' => false,
-            ];
-        }
-
-        // Simpan file ke storage/app/public/notes
-        $storedPath = $file->store('notes', 'public');
-        $fullPath = Storage::disk('public')->path($storedPath);
-
-        $mime = $file->getClientMimeType() ?: 'image/jpeg';
-        $fileBytes = file_exists($fullPath) ? file_get_contents($fullPath) : null;
-        if (!$fileBytes) {
-            return [
-                'reply' => "⚠️ Gagal membaca berkas yang diunggah. Silakan coba lagi.",
-                'is_confirmation' => false,
-            ];
-        }
-
-        $base64 = 'data:' . $mime . ';base64,' . base64_encode($fileBytes);
-
-        // Panggil Vision AI untuk mendeteksi relevansi dan ekstraksi
-        $detection = $this->detectImageRelevanceWithVision($base64, $userMessage);
-
-        // Jika Vision AI gagal total (misal rate limit upstream)
-        if (!$detection['success']) {
-            if (!empty($userMessage)) {
-                $parsed = $this->reasonActionWithAi($userMessage);
-                if (!empty($parsed['action']) && in_array($parsed['action'], ['catat_pengeluaran', 'catat_pemasukan'])) {
-                    $parsed['proof_image'] = $storedPath;
-                    return $this->handleActionWithConfirmation($parsed, $user, 'Bendahara Kelas', 'Ketua Kelas', 'Super Admin', $userRoleLabel, $userMessage);
-                }
-            }
-
-            session([
-                'chatbot_pending_uploaded_proof' => [
-                    'user_id' => $user->id,
-                    'path' => $storedPath,
-                    'created_at' => time(),
-                ]
-            ]);
-
-            return [
-                'reply' => "📷 **Foto Berkas Berhasil Diterima!**\n\nSistem sedang menyiapkan pencatatan. Untuk memastikan akurasi data di sistem kelas, mohon ketik keterangan transaksi dan nominalnya (contoh: *Pengeluaran beli spidol 35.000* atau *Pemasukan kas iuran*).",
-                'is_confirmation' => false,
-            ];
-        }
-
-        $data = $detection['data'];
-        $isRelevant = (bool) ($data['is_relevant'] ?? false);
-
-        // JIKA TIDAK RELEVAN -> TOLAK DAN HAPUS BERKAS
-        if (!$isRelevant) {
-            Storage::disk('public')->delete($storedPath);
-            $reason = !empty($data['reason']) ? $data['reason'] : "Gambar bukan merupakan nota belanja, kuitansi kas, ataupun bukti transfer pembayaran.";
-            return [
-                'reply' => "❌ **Foto/Berkas Ditolak**\n\nAI mendeteksi gambar yang Anda unggah **tidak berhubungan** dengan transaksi keuangan kas kelas.\n• **Alasan Deteksi**: {$reason}\n\nSistem hanya menerima berkas yang relevan:\n• **Nota / Kuitansi belanja** untuk pencatatan pengeluaran kas\n• **Bukti transfer pembayaran** untuk pencatatan pemasukan kas\n\nSilakan unggah foto dokumen transaksi kas yang sesuai.",
-                'is_confirmation' => false,
-            ];
-        }
-
-        // JIKA RELEVAN -> VALIDASI OTORISASI ROLE
-        $category = strtolower(trim((string) ($data['category'] ?? 'pengeluaran')));
-        $nominal = isset($data['nominal']) ? (float) $data['nominal'] : 0;
-        $keterangan = trim((string) ($data['keterangan'] ?? ''));
-        $date = trim((string) ($data['date'] ?? ''));
-
-        // Cek jika user menyertakan teks pesan yang menyebut nominal
-        if ($nominal <= 0 && !empty($userMessage)) {
-            if (preg_match('/(?:rp\.?\s*)?(\d{1,3}(?:\.\d{3})+|\d+)(?:\s*(?:k|rb|ribu))?/i', $userMessage, $mNum)) {
-                $cleanedNum = str_replace('.', '', $mNum[1]);
-                $val = (float) $cleanedNum;
-                if (stripos($mNum[0], 'k') !== false || stripos($mNum[0], 'rb') !== false || stripos($mNum[0], 'ribu') !== false) {
-                    $val *= 1000;
-                }
-                $nominal = $val;
-            }
-        }
-
-        if (empty($keterangan) && !empty($userMessage)) {
-            $keterangan = $userMessage;
-        }
-
-        // Otorisasi role untuk kategori kas
-        if ($category === 'pengeluaran' || $category === 'pemasukan') {
-            if (!in_array($userRole, ['bendahara', 'admin', 'ketua'])) {
-                Storage::disk('public')->delete($storedPath);
-                return [
-                    'reply' => "❌ **Akses Ditolak**: Berkas terdeteksi sebagai nota/bukti transaksi kas. Anda login sebagai **{$userRoleLabel}**. Pengelolaan kas kelas hanya berwenang dilakukan oleh Bendahara Kelas, Super Admin, atau Ketua Kelas.",
-                    'is_confirmation' => false,
-                ];
-            }
-
-            if ($nominal < 500) {
-                session([
-                    'chatbot_pending_uploaded_proof' => [
-                        'user_id' => $user->id,
-                        'path' => $storedPath,
-                        'category' => $category,
-                        'keterangan' => $keterangan ?: 'Transaksi kas',
-                        'created_at' => time(),
-                    ]
-                ]);
-
-                return [
-                    'reply' => "🔍 **Nota Berhasil Dikenali!**\n\nAI mendeteksi berkas sebagai bukti **" . ucfirst($category) . " Kas**" . ($keterangan ? " ({$keterangan})" : "") . ".\nNamun total nominal transaksi belum terbaca dengan jelas dari foto. Mohon ketikkan nominal transaksinya (contoh: *Rp 35.000* atau *35rb*).",
-                    'is_confirmation' => false,
-                ];
-            }
-
-            // Proteksi Likuiditas Kas jika pengeluaran
-            if ($category === 'pengeluaran') {
-                $activeClassSemester = AcademicService::getActiveSemester();
-                $curIn = KasTransaction::where('semester', $activeClassSemester)->where('type', 'pemasukan')->sum('amount');
-                $curOut = KasTransaction::where('semester', $activeClassSemester)->where('type', 'pengeluaran')->sum('amount');
-                $curSaldo = $curIn - $curOut;
-
-                if ($nominal > $curSaldo) {
-                    Storage::disk('public')->delete($storedPath);
-                    return [
-                        'reply' => "⚠️ **Pengeluaran Ditolak**: Nominal nota (Rp " . number_format($nominal, 0, ',', '.') . ") melebihi saldo kas semester aktif saat ini (Rp " . number_format($curSaldo, 0, ',', '.') . "). Saldo kas tidak boleh defisit/minus.",
-                        'is_confirmation' => false,
-                    ];
-                }
-            }
-
-            $action = $category === 'pemasukan' ? 'catat_pemasukan' : 'catat_pengeluaran';
-            $kategoriLabel = $category === 'pemasukan' ? 'Pemasukan Kas (Bukti Pembayaran / Iuran)' : 'Pengeluaran Kas (Nota Belanja Kebutuhan Kelas)';
-            $descFinal = !empty($keterangan) ? $keterangan : ($category === 'pemasukan' ? 'Pemasukan kas kelas' : 'Pengeluaran operasional kas kelas');
-
-            session([
-                'chatbot_pending_action' => [
-                    'user_id' => $user->id,
-                    'action_data' => [
-                        'action' => $action,
-                        'amount' => $nominal,
-                        'description' => $descFinal,
-                        'proof_image' => $storedPath,
-                        'date' => $date ?: now()->toDateString(),
-                    ],
-                    'created_at' => time(),
-                    'raw_message' => $userMessage ?: "Input {$category} via foto nota",
-                ]
-            ]);
-
-            $tanggalFormat = $date ? Carbon::parse($date)->translatedFormat('d F Y') : Carbon::today()->translatedFormat('d F Y');
-
-            $reply = "🔍 **Hasil Validasi & Analisis Berkas AI**\n\n"
-                . "• **Kategori**: {$kategoriLabel}\n"
-                . "• **Keterangan**: {$descFinal}\n"
-                . "• **Nominal**: **Rp " . number_format($nominal, 0, ',', '.') . "**\n"
-                . "• **Tanggal**: {$tanggalFormat}\n"
-                . "• **Bukti Foto/Nota**: Berkas berhasil divalidasi dan siap dilampirkan.\n\n"
-                . "Apakah data transaksi ini sudah benar dan ingin disimpan ke database Buku Kas?\n"
-                . "👉 Klik tombol **✓ Ya, Konfirmasi** di bawah atau ketik **Ya** untuk menyimpan, atau ketik **Batal** untuk membatalkan.";
-
-            return [
-                'reply' => $reply,
-                'is_confirmation' => true,
-            ];
-        }
-
-        // Kategori inventaris dinonaktifkan
-        if ($category === 'inventaris') {
-            Storage::disk('public')->delete($storedPath);
-            return [
-                'reply' => "ℹ️ **Fitur Inventaris Dinonaktifkan**: Fitur pengelolaan inventaris barang telah dihapus dari sistem. Sistem saat ini hanya menerima unggahan foto nota belanja (pengeluaran) atau bukti transfer (pemasukan) kas kelas.",
-                'is_confirmation' => false,
-            ];
-        }
-
-        Storage::disk('public')->delete($storedPath);
-        return [
-            'reply' => "❌ Berkas tidak dapat dikategorikan sebagai transaksi kas. Mohon unggah nota belanja atau bukti transfer pembayaran yang jelas.",
-            'is_confirmation' => false,
-        ];
-    }
-
-    /**
-     * Memanggil model Vision untuk menganalisis gambar base64
-     */
-    private function detectImageRelevanceWithVision(string $base64, string $userMessage = ''): array
-    {
-        $openrouterKey = env('OPENROUTER_API_KEY');
-        if (empty($openrouterKey)) {
-            return ['success' => false, 'error' => 'API Key OpenRouter tidak ditemukan.'];
-        }
-
-        $visionModels = [
-            'dots-studio/dots-3-note-preview:free',
-            'openrouter/free',
-            'google/gemma-4-31b-it:free',
-            'google/gemma-4-26b-a4b-it:free',
-            'qwen/qwen3.8-27b:free',
-        ];
-
-        $prompt = 'Kamu adalah AI Asisten Sistem Keuangan (Kas) Kelas Informatika S1 UPS Tegal.
-Tugasmu adalah menganalisis gambar yang diunggah pengguna.
-Tentukan secara ketat apakah gambar ini BERHUBUNGAN dengan transaksi kas kelas:
-1. RELEVAN (is_relevant: true):
-   - Struk, nota belanja, kuitansi, faktur belanja perlengkapan/kebutuhan kelas (category: "pengeluaran")
-   - Bukti transfer bank, m-banking, slip setoran, e-wallet untuk pembayaran kas/iuran (category: "pemasukan")
-2. TIDAK RELEVAN (is_relevant: false):
-   - Foto selfie, foto orang tanpa bukti nota, pemandangan, meme, hewan, makanan di luar konteks kas, foto barang tanpa bukti nota harga, gambar abstrak/polos, screenshot game/anime, atau gambar lain yang bukan dokumen transaksi keuangan kas.
-
-' . (!empty($userMessage) ? "Petunjuk tambahan dari pengguna: \"{$userMessage}\"\n" : "") . '
-Jawab HANYA dalam format JSON valid tanpa tanda backtick atau penjelasan lain:
-{
-  "is_relevant": true atau false,
-  "reason": "alasan singkat dalam bahasa Indonesia",
-  "category": "pengeluaran" atau "pemasukan" atau "tidak_relevan",
-  "nominal": angka total rupiah (integer tanpa titik) jika ada nota/struk/transfer atau null,
-  "keterangan": "ringkasan keperluan belanja/pemasukan kas" atau null,
-  "date": "YYYY-MM-DD" jika tertera tanggal di nota atau null
-}';
-
-        foreach ($visionModels as $model) {
-            try {
-                $response = Http::withHeaders([
-                    'Authorization' => 'Bearer ' . $openrouterKey,
-                    'HTTP-Referer' => 'http://127.0.0.1:8000',
-                    'X-Title' => 'Sistem Kas Informatika UPS',
-                    'Content-Type' => 'application/json',
-                ])->timeout(22)->post('https://openrouter.ai/api/v1/chat/completions', [
-                    'model' => $model,
-                    'messages' => [
-                        [
-                            'role' => 'user',
-                            'content' => [
-                                ['type' => 'text', 'text' => $prompt],
-                                ['type' => 'image_url', 'image_url' => ['url' => $base64]]
-                            ]
-                        ]
-                    ],
-                    'max_tokens' => 1000,
-                ]);
-
-                if ($response->successful()) {
-                    $json = $response->json();
-                    $choice = $json['choices'][0]['message'] ?? [];
-                    $rawText = $choice['content'] ?? '';
-                    if (empty($rawText) && !empty($choice['reasoning'])) {
-                        $rawText = $choice['reasoning'];
-                    }
-
-                    $parsedJson = $this->extractJsonFromText($rawText);
-                    if ($parsedJson !== null && isset($parsedJson['is_relevant'])) {
-                        return [
-                            'success' => true,
-                            'data' => $parsedJson,
-                            'model' => $model,
-                        ];
-                    }
-                }
-            } catch (\Throwable $e) {
-                // Lanjut ke model berikutnya
-            }
-        }
-
-        return ['success' => false, 'error' => 'Semua model vision tidak merespons.'];
-    }
-
-    private function extractJsonFromText(string $text): ?array
-    {
-        if (preg_match('/\{[\s\S]*\}/', $text, $m)) {
-            $decoded = json_decode($m[0], true);
-            if (is_array($decoded)) {
-                return $decoded;
-            }
-        }
-        $decoded = json_decode($text, true);
-        return is_array($decoded) ? $decoded : null;
     }
 
     /**
@@ -891,11 +563,8 @@ Jawab HANYA dalam format JSON valid tanpa tanda backtick atau penjelasan lain:
                 // 1. Respon pembatalan
                 if (preg_match('/^(?:batal|batalkan|cancel|tidak|nggak|gak|jangan|ga jadi|batalin|no|stop)\b/i', $msg) ||
                     preg_match('/(?:batalkan|batal aksi|jangan lakukan|ga usah)/i', $msg)) {
-                    if (!empty($pending['action_data']['proof_image'])) {
-                        Storage::disk('public')->delete($pending['action_data']['proof_image']);
-                    }
                     session()->forget('chatbot_pending_action');
-                    return "Tindakan telah dibatalkan. Berkas lampiran dihapus dan tidak ada perubahan data yang dilakukan.";
+                    return "Tindakan telah dibatalkan. Tidak ada perubahan data yang dilakukan.";
                 }
 
                 // 2. Respon persetujuan / konfirmasi
@@ -906,9 +575,6 @@ Jawab HANYA dalam format JSON valid tanpa tanda backtick atau penjelasan lain:
                     return $this->executeParsedAction($actionData, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $pending['raw_message'] ?? $message);
                 }
             } else {
-                if (!empty($pending['action_data']['proof_image'])) {
-                    Storage::disk('public')->delete($pending['action_data']['proof_image']);
-                }
                 session()->forget('chatbot_pending_action');
             }
         }
@@ -948,18 +614,11 @@ Jawab HANYA dalam format JSON valid tanpa tanda backtick atau penjelasan lain:
                           (str_ends_with(rtrim($msg), '?') && !preg_match('/^(?:catat|input|tambah|hapus|edit|ubah|batalkan|atur|daftarkan)\b/i', $msg));
 
         if ($isPureQuestion) {
-            // Khusus pengecekan atau pertanyaan terkait inventaris yang sudah dihapus
-            if (preg_match('/\b(?:inventaris|pinjam\s+barang|peminjaman\s+barang|kembalikan\s+barang)\b/i', $msg) && !preg_match('/\b(?:kas|uang|iuran|saldo)\b/i', $msg)) {
-                return [
-                    'reply' => "ℹ️ **Fitur Inventaris Kelas Telah Dihapus**\n\nFitur pengelolaan inventaris barang dan peminjaman telah dihapus dari sistem. Sistem kelas saat ini berfokus penuh pada **Buku Kas Kelas**, **Arsip & Rekapitulasi Kas**, serta **Direktori Mahasiswa**.",
-                    'is_confirmation' => false,
-                ];
-            }
             return null; // Teruskan ke AI Q&A normal
         }
 
         // Filter intensi aksi mutasi kas atau akun
-        $actionTriggerWords = '/\b(?:catat|tambah|tambahkan|tambahin|input|masukkan|masukin|keluar|pengeluaran|pemasukan|kurang|edit|ubah|ganti|perbarui|update|hapus|delete|hilangkan|jadikan|tetapkan|daftarkan|buat|set|beli|biaya|bayar|batal|batalkan|batalin|cancel|pinjam|pinjamkan|meminjam|peminjaman|kembalikan|kembalian|pengembalian|pulangkan)\b/i';
+        $actionTriggerWords = '/\b(?:catat|tambah|tambahkan|tambahin|input|masukkan|masukin|keluar|pengeluaran|pemasukan|kurang|edit|ubah|ganti|perbarui|update|hapus|delete|hilangkan|jadikan|tetapkan|daftarkan|buat|set|beli|biaya|bayar|batal|batalkan|batalin|cancel)\b/i';
         if (!preg_match($actionTriggerWords, $msg)) {
             return null; // Bukan perintah mutasi, teruskan ke Q&A normal
         }
@@ -1014,15 +673,7 @@ Jawab HANYA dalam format JSON valid tanpa tanda backtick atau penjelasan lain:
             }
         }
 
-        // B. Deteksi Permintaan Terkait Inventaris Barang (Fitur Dihapus)
-        if (preg_match('/\b(?:inventaris|barang|pinjam|peminjaman|kembalikan|pengembalian)\b/i', $msg) && !preg_match('/\b(?:kas|uang|iuran|tarik|saldo|transaksi)\b/i', $msg)) {
-            return [
-                'reply' => "ℹ️ **Fitur Inventaris Kelas Telah Dihapus**\n\nFitur pengelolaan inventaris barang dan peminjaman telah dihapus dari sistem. Sistem kelas saat ini berfokus penuh pada **Buku Kas Kelas**, **Arsip & Rekapitulasi Kas**, serta **Direktori Mahasiswa**.",
-                'is_confirmation' => false,
-            ];
-        }
-
-        // C. Deteksi Ubah Semester (contoh: "ubah semester aktif ke Semester 6", "ganti semester 4", "ubah semester")
+        // B. Deteksi Ubah Semester (contoh: "ubah semester aktif ke Semester 6", "ganti semester 4", "ubah semester")
         if (preg_match('/^(?:tolong\s+|coba\s+)?(?:ubah|ganti|pindah|set)\s+(?:semester|smt)(?:\s+aktif)?(?:\s+ke|\s+jadi)?\s*(.*)/i', $msg, $mSem)) {
             $semQuery = trim($mSem[1] ?? '');
             $parsedAction = [
@@ -1127,15 +778,6 @@ Jawab HANYA dalam format JSON valid tanpa tanda backtick atau penjelasan lain:
                     return "❌ Akses Ditolak: Anda login sebagai **{$userRoleLabel}**. Pengelolaan kas kelas hanya berhak dilakukan oleh Bendahara Kelas ({$bendaharaName}).";
                 }
                 break;
-
-            case 'tambah_barang':
-            case 'edit_barang':
-            case 'hapus_barang':
-            case 'pinjam_barang':
-            case 'catat_peminjaman':
-            case 'kembalikan_barang':
-            case 'catat_pengembalian':
-                return "ℹ️ **Fitur Inventaris Kelas Telah Dihapus**: Sistem saat ini berfokus penuh pada pembukuan kas kelas, iuran mingguan, dan manajemen akademik.";
 
             case 'ubah_role':
             case 'tambah_akun':
@@ -1750,8 +1392,7 @@ PROMPT;
                 $amount = (float) ($actionData['amount'] ?? 0);
                 $desc = (string) ($actionData['description'] ?? 'Pemasukan kas');
                 $student = isset($actionData['student']) ? (string) $actionData['student'] : null;
-                $proof = $actionData['proof_image'] ?? null;
-                return $this->actionCatatTransaksi($user, 'pemasukan', $amount, $desc, $student, $rawMessage, $proof);
+                return $this->actionCatatTransaksi($user, 'pemasukan', $amount, $desc, $student, $rawMessage);
 
             case 'catat_pengeluaran':
                 if (!in_array($userRole, ['bendahara', 'admin', 'ketua'])) {
@@ -1759,8 +1400,7 @@ PROMPT;
                 }
                 $amount = (float) ($actionData['amount'] ?? 0);
                 $desc = (string) ($actionData['description'] ?? 'Pengeluaran kas');
-                $proof = $actionData['proof_image'] ?? null;
-                return $this->actionCatatTransaksi($user, 'pengeluaran', $amount, $desc, null, $rawMessage, $proof);
+                return $this->actionCatatTransaksi($user, 'pengeluaran', $amount, $desc, null, $rawMessage);
 
             case 'batalkan_iuran':
             case 'hapus_iuran':
@@ -1784,15 +1424,6 @@ PROMPT;
                 $amount = isset($actionData['amount']) ? (string) $actionData['amount'] : null;
                 $desc = isset($actionData['description']) ? (string) $actionData['description'] : null;
                 return $this->actionEditTransaksi($user, $id, $amount, $desc);
-
-            case 'tambah_barang':
-            case 'edit_barang':
-            case 'hapus_barang':
-            case 'pinjam_barang':
-            case 'catat_peminjaman':
-            case 'kembalikan_barang':
-            case 'catat_pengembalian':
-                return "ℹ️ Fitur Inventaris Kelas telah dihapus dari sistem.";
 
             case 'ubah_role':
                 if (!in_array($userRole, ['admin', 'ketua'])) {
@@ -1992,7 +1623,7 @@ PROMPT;
     }
 
     // Eksekusi aksi Bendahara (mutasi kas, tarif, iuran)
-    private function actionCatatTransaksi($user, $type, $amountStr, $description, $studentParam = null, $rawMessage = '', $proofImage = null)
+    private function actionCatatTransaksi($user, $type, $amountStr, $description, $studentParam = null, $rawMessage = '')
     {
         $amount = (float) str_replace(['.', ','], ['', '.'], (string) $amountStr);
         $description = ucfirst(trim((string) $description));
@@ -2126,10 +1757,6 @@ PROMPT;
             'semester' => $activeClassSemester,
             'tahun_ajaran' => AcademicService::getTahunAjaran($activeClassSemester),
         ];
-
-        if (!empty($proofImage)) {
-            $transactionData['proof_image'] = $proofImage;
-        }
 
         // Proteksi Duplikasi Transaksi Kas via AI Chatbot
         $todayDate = Carbon::today()->format('Y-m-d');
@@ -2604,8 +2231,7 @@ Kamu memiliki akses PENUH ke SELURUH data di web ini secara real-time:
    - Jika pengguna bertanya cara mengganti kata sandi akunnya sendiri, jelaskan bahwa mereka dapat mengubahnya melalui tombol **"Pengaturan Sandi"** di navigasi sidebar kiri bawah.
    - **Bahasa Kasar & Ujaran Kebencian (Toxic)**: DILARANG merespons kata-kata kasar, caci maki, ejekan, atau hinaan. Tolak dengan sopan dan ingatkan untuk bertutur kata baik.
    - **Konten Vulgar & Pornografi (Vulgar)**: DILARANG KERAS melayani percakapan bermuatan seksual, vulgar, cabul, atau pornografi. Tolak dengan tegas dan sopan.
-   - **Fitur Inventaris Barang Dihapus**: Fitur inventaris barang dan peminjaman telah RESMI DIHAPUS. Jika ditanya mengenai barang atau peminjaman inventaris, jelaskan bahwa fitur telah ditiadakan.
-   - **Hak Akses CRUD**: Tetap patuhi otorisasi peran (Super Admin: Akun & Semester; Bendahara: Kas & Iuran; Mahasiswa/Ketua: Read-Only). Tolak aksi mutasi jika di luar hak peran.
+   - **Hak Akses CRUD**: Tetap patuhi otorisasi peran (Super Admin & Ketua Kelas: Akun & Semester; Bendahara: Kas & Iuran; Mahasiswa: Read-Only). Tolak aksi mutasi jika di luar hak peran.
 
 3. **BISA NGOBROL SANTAI & RAMAH**:
    - Sambut sapaan pengguna dengan hangat, akrab, dan bersahabat (misal: "Halo {$user->name}!", "Hai! Selamat pagi/siang/malam", "Wa'alaikumsalam!", dll.).
@@ -2620,25 +2246,25 @@ Kamu memiliki akses PENUH ke SELURUH data di web ini secara real-time:
 ## PENGETAHUAN LENGKAP PENEMPATAN & LETAK TOMBOL PADA WEB:
 Kamu memahami tata letak fisik dan letak persis seluruh tombol pada antarmuka web:
 1. Sidebar Kiri (Navigasi Utama):
-   • Menu Halaman (Tengah Sidebar): Dashboard (ke-1), Buku Kas Kelas (ke-2), Arsip & Rekapitulasi (ke-3), serta Daftar Mahasiswa & Kelola Akun (khusus Super Admin & Ketua Kelas).
-   • Menu 'Arsip & Rekapitulasi' (Menu ke-4): Dokumen pelaporan & audit kas resmi (read-only murni tanpa tombol aksi demi transparansi dan kejujuran pembukuan) dengan 3 mode: Per Bulan, Per Semester, dan Semua Periode.
-   • Tombol 'Pengaturan Sandi' (Ubah PW Mandiri): Terletak di bagian paling bawah sidebar, persis tepat di atas tombol Keluar (Logout) dan profil pengguna. Berupa tombol abu-abu dengan ikon gembok dan badge 'Ubah PW'. Bisa diakses mandiri oleh semua pengguna untuk mengganti sandi akun sendiri.
-   • Tombol 'Keluar' (Logout): Terletak di sudut paling bawah sidebar samping profil pengguna (warna merah).
+   • Menu Halaman (Tengah Sidebar): Dashboard (ke-1), Buku Kas Kelas (ke-2), Arsip & Rekapitulasi (ke-3), serta Kelola Akun & Semester (ke-4, khusus Super Admin & Ketua Kelas).
+   • Tombol 'Pengaturan Sandi' (Ubah PW Mandiri): Terletak di bagian bawah sidebar di atas tombol Keluar (Logout). Bisa diakses mandiri oleh semua pengguna untuk mengganti sandi akun sendiri.
+   • Tombol 'Keluar / Logout': Terletak di sudut paling bawah sidebar (warna merah).
 2. Header Atas Layar (Top App Bar):
    • Sudut Kiri: Tombol Hamburger Menu (tiga garis horizontal) untuk membuka/tutup sidebar.
-   • Sudut Kanan: Jam real-time, Badge Semester Aktif (contoh: Semester 5 (5A)), dan Badge Role login.
-3. Halaman Buku Kas Kelas (Menu ke-3 Sidebar):
-   • Toolbar Kanan Atas: Tombol '+ Catat Transaksi' (tombol hitam untuk debit/kredit kas) dan tombol 'Atur Tarif Iuran' (tombol hijau muda di samping badge tarif mingguan).
-   • Tabel Matriks Iuran Mingguan (Tengah): Tombol centang 'Bayar' dan 'Batalkan' di kolom paling kanan ('Aksi Iuran') pada baris tiap mahasiswa.
-   • Tabel Riwayat Transaksi Kas (Bawah): Tombol 'Edit' dan 'Hapus' di kolom 'Aksi' paling kanan tiap baris mutasi kas.
-4. Halaman Arsip & Rekapitulasi (Menu ke-4 Sidebar):
-   • Bersifat Read-Only Murni: Tidak ada tombol aksi, edit, hapus, ataupun simpan apapun.
-   • Bar Tab Mode di bagian atas: 'Per Bulan', 'Per Semester', dan 'Semua Periode' untuk berganti sudut pandang rekapitulasi.
-5. Halaman Kelola Akun & Semester (Menu ke-5 Sidebar - Khusus Super Admin):
-   • Toolbar Kanan Atas: Tombol '+ Tambah Akun Baru' (tombol hitam).
-   • Panel Kotak Ungu Cepat: Terletak tepat di bawah header halaman ('Pengaturan Semester Aktif Kelas & Sinkronisasi Sistem') dengan dropdown Semester 1 s/d 8 dan tombol ungu 'Terapkan Semester'.
-   • Tabel Pengguna: Tombol 'Akademik' (biru), 'Sandi' (abu-abu), dan 'Hapus' (merah) di kolom paling kanan tiap baris akun.
-6. Widget AI Chatbot:
+   • Sudut Kanan: Jam real-time, Badge Semester Aktif (contoh: Semester 5 (Kelas 5A)), dan Badge Role login.
+3. Halaman Dashboard (Menu ke-1 Sidebar):
+   • Menampilkan status tunggakan iuran kas pribadi (4 minggu M1-M4) serta daftar anggota kelas dengan indikator status Online/Offline real-time.
+4. Halaman Buku Kas Kelas (Menu ke-2 Sidebar):
+   • Toolbar Atas: Filter Semester/Bulan/Tahun, tombol pintas Arsip Kas, serta tombol '+ Catat Transaksi' dan 'Atur Tarif Iuran' (khusus Bendahara).
+   • Matriks Iuran Mingguan: Monitoring status bayar per mahasiswa untuk Minggu 1 s/d 4 beserta tombol 'Bayar' dan 'Batalkan' (khusus Bendahara).
+5. Halaman Arsip & Rekapitulasi (Menu ke-3 Sidebar):
+   • Pusat informasi saldo kas, total pemasukan, total pengeluaran, dan riwayat mutasi (read-only).
+   • Bar Tab Mode di bagian atas: 'Per Bulan', 'Per Semester', dan 'Semua Periode'.
+6. Halaman Kelola Akun & Semester (Menu ke-4 Sidebar - Khusus Super Admin & Ketua Kelas):
+   • Toolbar Kanan Atas: Tombol 'Tambah Akun Baru'.
+   • Panel Sinkronisasi Semester Aktif Kelas (Semester 1 s/d 8) dan kenaikan semester massal.
+   • Daftar Akun Pengguna: Ubah role, reset sandi, dan hapus akun.
+7. Widget AI Chatbot:
    • Tombol mengambang (floating) di sudut kanan bawah layar pada semua halaman, dan jendela chat dapat digeser (draggable) posisinya di layar.
 
 JIKA PENGGUNA BERTANYA CARA AKSES / LETAK / POSISI / PENEMPATAN SUATU FITUR ATAU TOMBOL:
@@ -3421,17 +3047,7 @@ PROMPT;
                 . "   2. Klik tombol merah **\"Keluar\"** untuk mengakhiri sesi login akun Anda secara aman.";
         }
 
-        // 3. Permintaan Terkait Fitur Inventaris Barang (Fitur Dihapus)
-        if (preg_match('/\b(?:inventaris|barang|pinjam|pinjamkan|peminjaman|kembalikan|pengembalian)\b/i', $msg) && !preg_match('/\b(?:kas|uang|iuran|saldo)\b/i', $msg)) {
-            return "ℹ️ **Fitur Inventaris Kelas Telah Dihapus**\n\n"
-                . "Fitur pengelolaan inventaris kelas dan peminjaman barang saat ini telah dihapus dari sistem.\n"
-                . "Sistem web saat ini berfokus penuh pada:\n"
-                . "1. **Buku Kas Kelas** (Pemasukan, Pengeluaran, Matriks Iuran Mingguan)\n"
-                . "2. **Arsip & Rekapitulasi Kas** (Audit laporan per Bulan, Semester, Tahun, dan Seluruh Periode)\n"
-                . "3. **Daftar Mahasiswa & Manajemen Akun**.";
-        }
-
-        // 4. Ubah / Ganti Semester Aktif
+        // 3. Ubah / Ganti Semester Aktif
         if (preg_match('/\b(?:semester|smt)\b/i', $msg) && !preg_match('/\b(?:arsip|rekap(?:an)?|rekapitulasi)\b/i', $msg)) {
             return "Cara Akses & Letak Fitur Pengaturan Semester Aktif:\n\n"
                 . "• **Posisi di Web**: Masuk ke menu **'Kelola Akun & Semester' (Menu ke-5 di Sidebar Kiri)**.\n"
@@ -3501,45 +3117,26 @@ PROMPT;
                 . "• **Hak Akses**: Khusus Bendahara Kelas.";
         }
 
-        // 13. Mode Arsip & Rekapitulasi Pendataan Kas (Per Bulan / Per Semester / Per Tahun / Semua Periode)
-        if (preg_match('/\b(?:arsip|rekap(?:an)?|rekapitulasi|pertahun|per\s*tahun|persemester|per\s*semester|perbulan|per\s*bulan|semua\s*periode|semua\s*pendataan)\b/i', $msg)) {
-            return "Cara Akses & Melihat Menu Khusus Arsip & Rekapitulasi Kas (Per Bulan, Per Semester, Per Tahun, atau Semua Periode):\n\n"
-                . "• **Posisi di Web**: Terletak di **Sidebar Kiri menu ke-4** (ikon arsip/folder bertuliskan **\"Arsip & Rekapitulasi\"**), atau via tombol ungu pintas **\"Menu Arsip & Rekapitulasi &rarr;\"** di halaman Buku Kas.\n"
-                . "• **Letak Tab Mode Arsip**: Di halaman ini, terdapat bar navigasi khusus 4 mode periode mandiri:\n"
-                . "   1. **Tombol '📅 Per Bulan'**:\n"
-                . "      • Menampilkan ringkasan mutasi bulanan dan matriks iuran mahasiswa pada bulan yang dipilih.\n"
-                . "      • Filter tersedia: Pilihan Semester, Dropdown Bulan (Januari - Desember), Dropdown Tahun, serta tombol pintas *'↺ Bulan Ini'*.\n"
-                . "   2. **Tombol '🎓 Per Semester'**:\n"
-                . "      • Menampilkan Tabel Rekapitulasi Kepatuhan Iuran Mahasiswa (akumulasi minggu bayar & total uang yang disetor per mahasiswa) serta Tabel Rincian Mutasi Kas Per Bulan dalam semester tersebut.\n"
-                . "      • Filter tersedia: Dropdown pilihan Semester 1 s/d 8.\n"
-                . "   3. **Tombol '📆 Per Tahun'**:\n"
-                . "      • Menampilkan Tabel Rekapitulasi Kas 12 Bulan (Januari s/d Desember) beserta total pemasukan, pengeluaran, selisih bersih tiap bulan, serta Rekapitulasi Iuran Tahunan Mahasiswa.\n"
-                . "      • Filter tersedia: Dropdown pilihan Tahun (2024 s/d 2028).\n"
-                . "   4. **Tombol '🌐 Semua Periode'**:\n"
-                . "      • Menampilkan rangkuman all-time: Tabel Komparasi Finansial Seluruh Semester (Semester 1 s/d 8) dan Akumulasi Total Iuran Mahasiswa Sepanjang Waktu.\n"
-                . "• **Langkah Cara Akses**:\n"
-                . "   1. Buka menu **\"Arsip & Rekapitulasi\"** pada Sidebar Kiri (Menu ke-4).\n"
-                . "   2. Klik salah satu tab periode: **Per Bulan**, **Per Semester**, **Per Tahun**, atau **Semua Periode**.\n"
-                . "   3. Gunakan filter di sebelah kanan tab untuk berpindah bulan, semester, atau tahun sesuai rekap yang ingin Anda lihat.\n"
+        // 13. Mode Arsip & Rekapitulasi Pendataan Kas (Per Bulan / Per Semester / Semua Periode)
+        if (preg_match('/\b(?:arsip|rekap(?:an)?|rekapitulasi|persemester|per\s*semester|perbulan|per\s*bulan|semua\s*periode|semua\s*pendataan)\b/i', $msg)) {
+            return "Cara Akses & Melihat Menu Arsip & Rekapitulasi Kas:\n\n"
+                . "• **Posisi di Web**: Terletak di **Sidebar Kiri menu ke-3** bertuliskan **\"Arsip & Rekapitulasi\"**, atau via tombol pintas **\"Arsip Kas\"** di halaman Buku Kas.\n"
+                . "• **Mode Rekapitulasi yang Tersedia**:\n"
+                . "   1. **Per Bulan**: Menampilkan saldo, pemasukan, pengeluaran, rekap matriks iuran mingguan (M1–M4), serta riwayat mutasi bulan terpilih.\n"
+                . "   2. **Per Semester**: Menampilkan ringkasan finansial semester dan rincian mutasi kas per bulan sepanjang semester terpilih.\n"
+                . "   3. **Semua Periode**: Menampilkan komparasi finansial seluruh semester (Semester 1 s/d 8) dan akumulasi iuran sepanjang waktu.\n"
                 . "• **Hak Akses**: Dapat dilihat oleh seluruh pengguna (Super Admin, Bendahara, Ketua Kelas, dan Mahasiswa).";
         }
 
         // 14. Halaman / Fitur Buku Kas Kelas Keseluruhan
         if (preg_match('/\b(?:kas|uang\s*kas|buku\s*kas)\b/i', $msg)) {
             return "Cara Akses & Letak Fitur Buku Kas Kelas:\n\n"
-                . "• **Posisi di Web**: Terletak di **Sidebar Kiri menu ke-3** (ikon dompet bertuliskan **\"Buku Kas Kelas\"**).\n"
-                . "• **Langkah Cara Akses**:\n"
-                . "   1. Lihat Sidebar Navigasi di sebelah kiri layar Anda.\n"
-                . "   2. Klik menu **\"Buku Kas Kelas\"**.\n"
-                . "   3. Di halaman tersebut Anda dapat menemukan:\n"
-                . "      • Tombol Pintas Menu Arsip: Tombol ungu *\"Menu Arsip & Rekapitulasi &rarr;\"* di header kanan atas.\n"
-                . "      • Kartu Ringkasan Keuangan: Saldo Kas Aktif, Total Pemasukan, dan Total Pengeluaran bulan berjalan.\n"
-                . "      • Toolbar Kanan Atas: Tombol *\"+ Catat Transaksi\"* (hitam) dan tombol *\"Atur Tarif Iuran\"* (hijau muda).\n"
-                . "      • Tabel Matriks Iuran Mingguan: Monitoring status bayar per mahasiswa untuk Minggu 1 s/d 4.\n"
-                . "      • Tabel Riwayat Transaksi Kas: Memuat daftar debit/kredit dan tombol Edit/Hapus.\n"
-                . "• **Hak Akses**:\n"
-                . "   • Bendahara: Kelola penuh pencatatan kas, tarif, dan validasi iuran.\n"
-                . "   • Super Admin & Mahasiswa: Melihat saldo, rekap tunggakan, dan riwayat transaksi (read-only).";
+                . "• **Posisi di Web**: Terletak di **Sidebar Kiri menu ke-2** bertuliskan **\"Buku Kas Kelas\"**.\n"
+                . "• **Fitur di Halaman Buku Kas**:\n"
+                . "   • Filter Semester, Bulan, dan Tahun serta tombol pintas **\"Arsip Kas\"**.\n"
+                . "   • Matriks Iuran Mingguan (Minggu 1 s/d 4) untuk memantau status lunas/belum setiap mahasiswa.\n"
+                . "   • Khusus Bendahara: tombol catat transaksi, atur tarif iuran, bayar/batalkan iuran mingguan, serta ekspor Excel.\n"
+                . "• **Catatan**: Ringkasan saldo, total pemasukan, total pengeluaran, dan riwayat mutasi lengkap tersedia di menu **Arsip & Rekapitulasi**.";
         }
 
         // 15. Tombol Tambah Akun Baru
@@ -3571,24 +3168,18 @@ PROMPT;
                 . "• **Hak Akses**: Khusus Super Admin & Ketua Kelas.";
         }
 
-        // 17. Daftar Mahasiswa / Data Anggota Kelas
+        // 17. Daftar Anggota Kelas / Data Mahasiswa
         if (preg_match('/\b(?:mahasiswa|anggota|teman|murid)\b/i', $msg)) {
-            return "Cara Akses & Letak Fitur Daftar Mahasiswa:\n\n"
-                . "• **Posisi di Web**: Terletak di **Sidebar Kiri** (ikon toga bertuliskan **\"Daftar Mahasiswa\"**).\n"
-                . "• **Langkah Cara Akses**:\n"
-                . "   1. Lihat Sidebar Navigasi di sebelah kiri layar Anda.\n"
-                . "   2. Klik menu **\"Daftar Mahasiswa\"**.\n"
-                . "   3. Halaman menampilkan daftar direktori anggota kelas, NPM, kelas & semester, serta status keaktifan akademik.\n"
-                . "• **Hak Akses**: Khusus Super Admin & Ketua Kelas.";
+            return "Cara Akses Data Anggota Kelas:\n\n"
+                . "• **Daftar Anggota & Status Online**: Langsung tersedia di menu **\"Dashboard\" (Menu ke-1 di Sidebar Kiri)** lengkap dengan pencarian nama/NPM dan filter status Online.\n"
+                . "• **Pengelolaan Akun Mahasiswa (Tambah/Ubah Role/Reset Sandi)**: Tersedia di menu **\"Kelola Akun & Semester\" (Menu ke-4 di Sidebar Kiri)** khusus Super Admin & Ketua Kelas.";
         }
 
         // 18. Dashboard Kelas
         if (preg_match('/\b(?:dashboard|beranda|home)\b/i', $msg)) {
             return "Cara Akses & Letak Fitur Dashboard:\n\n"
-                . "• **Posisi di Web**: Terletak di **Sidebar Kiri menu ke-1** (ikon rumah bertuliskan **\"Dashboard\"**).\n"
-                . "• **Langkah Cara Akses**:\n"
-                . "   1. Klik menu **\"Dashboard\"** pada Sidebar Kiri.\n"
-                . "   2. Menampilkan ikhtisar menyeluruh: saldo kas kelas, ringkasan penerimaan & pengeluaran kas, status iuran, dan informasi penting perkuliahan.\n"
+                . "• **Posisi di Web**: Terletak di **Sidebar Kiri menu ke-1** bertuliskan **\"Dashboard\"**.\n"
+                . "• **Konten Dashboard**: Menampilkan status tunggakan iuran kas pribadi (4 minggu M1–M4) serta daftar anggota kelas dengan indikator status Online/Offline secara real-time.\n"
                 . "• **Hak Akses**: Dapat diakses oleh seluruh pengguna.";
         }
 
@@ -3630,31 +3221,17 @@ PROMPT;
         }
 
         // 22. Pertanyaan Umum Penempatan / Letak Tombol & Cara Akses Secara Keseluruhan
-        return "Panduan Lengkap Navigasi, Cara Akses & Penempatan Fitur Web Kelas Informatika:\n\n"
+        return "Panduan Lengkap Navigasi & Penempatan Fitur Web Kas Kelas:\n\n"
             . "1. Sidebar Kiri (Navigasi Utama Layar):\n"
-            . "   • Menu Dashboard (ke-1): Ringkasan statistik kelas.\n"
-            . "   • Menu Daftar Mahasiswa (khusus Super Admin & Ketua Kelas): Data seluruh mahasiswa dan pengurus.\n"
-            . "   • Menu Buku Kas Kelas (ke-3): Ringkasan saldo kas, matriks iuran mingguan, dan riwayat transaksi bulanan.\n"
-            . "   • Menu Arsip & Rekapitulasi (ke-4): Pusat arsip rekapitulasi kas Per Bulan, Per Semester, Per Tahun, dan Semua Periode.\n"
-            . "   • Menu Kelola Akun & Semester (ke-5, khusus Super Admin & Ketua Kelas): Panel semester aktif dan kelola akun pengguna.\n"
-            . "   • Tombol 'Pengaturan Sandi' (Ubah PW Mandiri): Terletak di bagian paling bawah sidebar, persis tepat di atas tombol Keluar.\n"
-            . "   • Tombol 'Keluar' (Logout): Terletak di sudut paling bawah sidebar samping profil pengguna (warna merah).\n\n"
+            . "   • Menu Dashboard (ke-1): Status tunggakan kas pribadi (4 minggu) & daftar anggota kelas real-time (Online/Offline).\n"
+            . "   • Menu Buku Kas Kelas (ke-2): Matriks iuran mingguan mahasiswa (M1–M4) dan pencatatan kas oleh Bendahara.\n"
+            . "   • Menu Arsip & Rekapitulasi (ke-3): Pusat informasi saldo kas, pemasukan, pengeluaran, dan rekapitulasi Per Bulan, Per Semester, serta Semua Periode.\n"
+            . "   • Menu Kelola Akun & Semester (ke-4, khusus Super Admin & Ketua Kelas): Pengaturan semester aktif, kenaikan semester massal, dan kelola akun pengguna.\n"
+            . "   • Tombol 'Pengaturan Sandi' (Ubah PW Mandiri) & tombol 'Keluar / Logout' di bagian bawah sidebar.\n\n"
             . "2. Header Atas Layar (Top App Bar):\n"
             . "   • Sudut Kiri: Tombol Hamburger Menu (buka/tutup sidebar navigasi).\n"
-            . "   • Sudut Kanan: Jam real-time, Badge Semester Aktif (contoh: Semester 5 (5A)), dan Badge Role login.\n\n"
-            . "3. Halaman Buku Kas Kelas (Menu ke-3 Sidebar):\n"
-            . "   • Tombol Pintas Menu Arsip: Tombol ungu *\"Menu Arsip & Rekapitulasi &rarr;\"* di header kanan atas.\n"
-            . "   • Toolbar Kanan Atas: Tombol '+ Catat Transaksi' (tombol hitam) dan tombol 'Atur Tarif Iuran' (tombol hijau muda).\n"
-            . "   • Tabel Matriks Iuran (Tengah): Tombol 'Bayar' dan 'Batalkan' di kolom paling kanan tiap mahasiswa.\n"
-            . "   • Tabel Riwayat Kas (Bawah): Tombol 'Edit' dan 'Hapus' di kolom 'Aksi' paling kanan tiap transaksi.\n\n"
-            . "4. Halaman Arsip & Rekapitulasi (Menu ke-4 Sidebar):\n"
-            . "   • Tab Pilihan Mode: 'Per Bulan', 'Per Semester', 'Per Tahun', dan 'Semua Periode'.\n"
-            . "   • Tombol Pintas: Tombol *\"Buka Buku Kas & Iuran &rarr;\"* untuk kembali ke buku kas harian.\n\n"
-            . "5. Halaman Kelola Akun & Semester (Menu ke-5 Sidebar - Khusus Super Admin):\n"
-            . "   • Toolbar Kanan Atas: Tombol '+ Tambah Akun Baru'.\n"
-            . "   • Panel Kotak Ungu: Terletak tepat di bawah judul halaman dengan dropdown Semester 1 s/d 8 dan tombol ungu 'Terapkan Semester'.\n"
-            . "   • Tabel Pengguna: Tombol 'Akademik', 'Sandi', dan 'Hapus' di kolom paling kanan tiap baris akun.\n\n"
-            . "6. Widget AI Chatbot:\n"
+            . "   • Sudut Kanan: Jam real-time, Badge Semester Aktif, dan Badge Role login.\n\n"
+            . "3. Widget AI Chatbot:\n"
             . "   • Mengambang di sudut kanan bawah layar pada semua halaman, dan dapat digeser (draggable) posisinya di layar.";
     }
 }

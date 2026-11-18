@@ -1222,16 +1222,12 @@
         return String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     }
 
-    function renderUserMessageDom(text, timeStr, name, initials, role, roleLabel, imgUrl = null) {
+    function renderUserMessageDom(text, timeStr, name, initials, role, roleLabel) {
         const container = document.getElementById('chatbot-messages');
         if (!container) return;
         const wrapper = document.createElement('div');
         wrapper.className = 'chatbot-msg chatbot-msg-user';
 
-        let imgHtml = '';
-        if (imgUrl) {
-            imgHtml = `<div style="margin-bottom:6px;"><img src="${imgUrl}" style="max-width:180px; max-height:120px; border-radius:8px; object-fit:cover; border:1px solid rgba(255,255,255,0.3); display:block; cursor:pointer;" onclick="openChatbotImageModal(this.src, 'Foto Berkas yang Diunggah')" alt="Foto Bukti" title="Klik untuk melihat foto penuh"></div>`;
-        }
         let cleanUserText = (text || '').trim();
         let textHtml = cleanUserText ? `<div style="white-space:pre-wrap; word-break:break-word;">${escapeHtml(cleanUserText)}</div>` : '';
 
@@ -1244,20 +1240,19 @@
                     <span class="chatbot-msg-name">${escapeHtml(name || CURRENT_USER_NAME)}</span>
                     <span class="chatbot-msg-tag chatbot-tag-${role || CURRENT_USER_ROLE}">${roleLabel || CURRENT_USER_ROLE_LABEL}</span>
                 </div>
-                <div class="chatbot-msg-bubble">${imgHtml}${textHtml}</div>
+                <div class="chatbot-msg-bubble">${textHtml}</div>
                 <span class="chatbot-msg-time">${timeStr || getTimeString()}</span>
             </div>
         `;
         container.appendChild(wrapper);
     }
 
-    function addUserMessage(text, imgUrl = null) {
+    function addUserMessage(text) {
         const timeStr = getTimeString();
-        renderUserMessageDom(text, timeStr, CURRENT_USER_NAME, CURRENT_USER_INITIALS, CURRENT_USER_ROLE, CURRENT_USER_ROLE_LABEL, imgUrl);
+        renderUserMessageDom(text, timeStr, CURRENT_USER_NAME, CURRENT_USER_INITIALS, CURRENT_USER_ROLE, CURRENT_USER_ROLE_LABEL);
         chatMessagesHistory.push({
             type: 'user',
             text: text,
-            imgUrl: imgUrl,
             time: timeStr,
             senderName: CURRENT_USER_NAME,
             senderInitials: CURRENT_USER_INITIALS,

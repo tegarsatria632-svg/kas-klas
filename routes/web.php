@@ -6,7 +6,6 @@ use App\Http\Controllers\ChatbotController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\KasController;
 use App\Http\Controllers\UserController;
-use App\Http\Controllers\MahasiswaDirectoryController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {

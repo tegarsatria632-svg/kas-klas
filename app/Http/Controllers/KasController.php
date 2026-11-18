@@ -38,48 +38,6 @@ class KasController extends Controller
         // Fleksibel: Tidak dikunci arsip agar pengguna bebas memilih dan mencatat data
         $isReadOnly = false;
 
-        // Query transaksi kas berdasarkan bulan & semester terpilih
-        $query = KasTransaction::with('user')
-            ->where('semester', $selectedSemester)
-            ->whereMonth('date', $selectedMonth)
-            ->whereYear('date', $selectedYear)
-            ->latest('date')
-            ->latest('id');
-
-        if ($request->filled('type')) {
-            $query->where('type', $request->type);
-        }
-
-        $transactions = $query->paginate(15)->withQueryString();
-
-        // Finansial Bulan Terpilih
-        $pemasukanBulan = KasTransaction::where('semester', $selectedSemester)
-            ->whereMonth('date', $selectedMonth)
-            ->whereYear('date', $selectedYear)
-            ->where('type', 'pemasukan')
-            ->sum('amount');
-        $pengeluaranBulan = KasTransaction::where('semester', $selectedSemester)
-            ->whereMonth('date', $selectedMonth)
-            ->whereYear('date', $selectedYear)
-            ->where('type', 'pengeluaran')
-            ->sum('amount');
-        $saldoBulan = $pemasukanBulan - $pengeluaranBulan;
-
-        // Finansial Semester Terpilih (Total Kumulatif Semester)
-        $totalPemasukanSemester = KasTransaction::where('semester', $selectedSemester)->where('type', 'pemasukan')->sum('amount');
-        $totalPengeluaranSemester = KasTransaction::where('semester', $selectedSemester)->where('type', 'pengeluaran')->sum('amount');
-        $saldoSemester = $totalPemasukanSemester - $totalPengeluaranSemester;
-
-        // Finansial Keseluruhan (All-Time)
-        $totalPemasukanAll = KasTransaction::where('type', 'pemasukan')->sum('amount');
-        $totalPengeluaranAll = KasTransaction::where('type', 'pengeluaran')->sum('amount');
-        $totalSaldoAll = $totalPemasukanAll - $totalPengeluaranAll;
-
-        // Variabel untuk Kartu Ringkasan Buku Kas
-        $totalPemasukan = $pemasukanBulan;
-        $totalPengeluaran = $pengeluaranBulan;
-        $saldo = $saldoBulan;
-
         // Mahasiswa & Matriks Iuran Mingguan Bulan Terpilih
         $students = User::whereIn('role', ['mahasiswa', 'admin', 'ketua', 'bendahara'])
             ->orderBy('npm', 'asc')
@@ -101,45 +59,22 @@ class KasController extends Controller
             }
         }
 
-        // Cek apakah terdapat saldo carry forward awal semester
-        $carryForwardTx = KasTransaction::where('semester', $selectedSemester)
-            ->where('type', 'pemasukan')
-            ->where('description', 'like', '%Carry Forward%')
-            ->first();
-
         $semesters = AcademicService::SEMESTERS;
         $kelasLabel = AcademicService::getKelasLabel($activeClassSemester);
-        $selectedKelasLabel = AcademicService::getKelasLabel($selectedSemester);
 
         return view('kas.index', compact(
-            'totalPemasukan',
-            'totalPengeluaran',
-            'saldo',
-            'pemasukanBulan',
-            'pengeluaranBulan',
-            'saldoBulan',
-            'totalPemasukanSemester',
-            'totalPengeluaranSemester',
-            'saldoSemester',
-            'totalPemasukanAll',
-            'totalPengeluaranAll',
-            'totalSaldoAll',
-            'transactions',
             'students',
             'selectedMonth',
             'selectedYear',
             'selectedSemester',
             'activeClassSemester',
             'kelasLabel',
-            'selectedKelasLabel',
             'isReadOnly',
-            'carryForwardTx',
             'semesters',
             'duesRate',
             'namaBulan',
             'realCurrentMonth',
             'realCurrentYear',
-            'realCurrentDay',
             'realActiveWeek',
             'isCurrentRealMonth',
             'weekRanges',
