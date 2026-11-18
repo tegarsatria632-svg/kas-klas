@@ -233,21 +233,44 @@ class KasController extends Controller
             }
         }
 
+        // Rekam snapshot data lama (before) sebagai backup audit sebelum diubah
+        $beforeSnapshot = [
+            'type' => $ka->type,
+            'amount' => (float) $ka->amount,
+            'date' => $ka->date ? $ka->date->format('Y-m-d') : null,
+            'description' => $ka->description,
+            'semester' => $ka->semester,
+            'proof_image' => $ka->proof_image,
+        ];
+
         if ($request->hasFile('proof_image')) {
-            if ($ka->proof_image) {
-                Storage::disk('public')->delete($ka->proof_image);
-            }
+            // File foto lama dipertahankan di storage sebagai backup bukti audit
             $validated['proof_image'] = $request->file('proof_image')->store('notes', 'public');
         }
 
         $ka->update($validated);
+        $ka->refresh();
+
+        $afterSnapshot = [
+            'type' => $ka->type,
+            'amount' => (float) $ka->amount,
+            'date' => $ka->date ? $ka->date->format('Y-m-d') : null,
+            'description' => $ka->description,
+            'semester' => $ka->semester,
+            'proof_image' => $ka->proof_image,
+        ];
 
         AuditLog::record(
             'edit_transaksi',
-            "Memperbarui transaksi #{$ka->id} {$ka->type} menjadi Rp " . number_format($validated['amount'], 0, ',', '.') . " ({$validated['description']})",
+            "Memperbarui transaksi #{$ka->id} {$ka->type} dari Rp " . number_format($beforeSnapshot['amount'], 0, ',', '.') . " menjadi Rp " . number_format($afterSnapshot['amount'], 0, ',', '.') . " ({$afterSnapshot['description']})",
             auth()->user(),
             'web_form',
-            ['id' => $ka->id, 'type' => $ka->type, 'amount' => $validated['amount'], 'semester' => $ka->semester]
+            [
+                'id' => $ka->id,
+                'semester' => $ka->semester,
+                'before' => $beforeSnapshot,
+                'after' => $afterSnapshot,
+            ]
         );
 
         return redirect()->route('kas.index', ['semester' => $ka->semester])
@@ -395,14 +418,28 @@ class KasController extends Controller
             return back()->withErrors(['error' => 'Data iuran minggu tersebut tidak ditemukan.']);
         }
 
+        $beforeDueSnapshot = [
+            'due_id' => $due->id,
+            'user_id' => $student->id,
+            'student_name' => $student->name,
+            'kas_transaction_id' => $due->kas_transaction_id,
+            'week_number' => $due->week_number,
+            'month' => $due->month,
+            'year' => $due->year,
+            'semester' => $due->semester,
+        ];
+
         DB::transaction(function () use ($due) {
             $txId = $due->kas_transaction_id;
-            $due->delete();
+            $due->delete(); // SoftDelete
 
             if ($txId) {
                 $otherDuesCount = DuesPayment::where('kas_transaction_id', $txId)->count();
                 if ($otherDuesCount === 0) {
-                    KasTransaction::where('id', $txId)->delete();
+                    $tx = KasTransaction::find($txId);
+                    if ($tx) {
+                        $tx->delete(); // SoftDelete
+                    }
                 } else {
                     $tx = KasTransaction::find($txId);
                     $rate = AcademicService::getDuesRatePerWeek();
@@ -418,7 +455,13 @@ class KasController extends Controller
             "Membatalkan status iuran Minggu ke-{$validated['week_number']} mahasiswa {$student->name} (Bln {$validated['month']}/{$validated['year']} - {$validated['semester']})",
             auth()->user(),
             'web_form',
-            ['user_id' => $student->id, 'student_name' => $student->name, 'week_number' => $validated['week_number'], 'semester' => $validated['semester']]
+            [
+                'user_id' => $student->id,
+                'student_name' => $student->name,
+                'week_number' => $validated['week_number'],
+                'semester' => $validated['semester'],
+                'before' => $beforeDueSnapshot,
+            ]
         );
 
         return redirect()->route('kas.index', [
@@ -476,25 +519,51 @@ class KasController extends Controller
             ]);
         }
 
-        if ($ka->proof_image) {
-            Storage::disk('public')->delete($ka->proof_image);
-        }
+        // Rekam snapshot lengkap sebelum soft-delete (foto nota tetap disimpan agar bisa di-restore)
+        $relatedDues = DuesPayment::where('kas_transaction_id', $ka->id)->get()->map(function ($d) {
+            return [
+                'id' => $d->id,
+                'user_id' => $d->user_id,
+                'week_number' => $d->week_number,
+                'month' => $d->month,
+                'year' => $d->year,
+                'semester' => $d->semester,
+            ];
+        })->toArray();
 
-        // Hapus juga riwayat dues_payment terkait jika ada
-        DuesPayment::where('kas_transaction_id', $ka->id)->delete();
+        $beforeSnapshot = [
+            'id' => $ka->id,
+            'user_id' => $ka->user_id,
+            'type' => $ka->type,
+            'amount' => (float) $ka->amount,
+            'date' => $ka->date ? $ka->date->format('Y-m-d') : null,
+            'description' => $ka->description,
+            'semester' => $ka->semester,
+            'proof_image' => $ka->proof_image,
+            'related_dues' => $relatedDues,
+        ];
+
+        DB::transaction(function () use ($ka) {
+            DuesPayment::where('kas_transaction_id', $ka->id)->delete(); // SoftDelete
+            $ka->delete(); // SoftDelete
+        });
 
         AuditLog::record(
             'hapus_transaksi',
-            "Menghapus transaksi #{$ka->id} {$ka->type} Rp " . number_format($ka->amount, 0, ',', '.') . " ({$ka->description})",
+            "Menghapus transaksi #{$ka->id} {$ka->type} Rp " . number_format($ka->amount, 0, ',', '.') . " ({$ka->description}) [Soft Delete / Backup tersimpan]",
             auth()->user(),
             'web_form',
-            ['id' => $ka->id, 'type' => $ka->type, 'amount' => $ka->amount, 'semester' => $ka->semester]
+            [
+                'id' => $ka->id,
+                'type' => $ka->type,
+                'amount' => (float) $ka->amount,
+                'semester' => $ka->semester,
+                'before' => $beforeSnapshot,
+            ]
         );
 
-        $ka->delete();
-
         return redirect()->route('kas.index', ['semester' => $ka->semester])
-            ->with('success', 'Transaksi kas berhasil dihapus dari pembukuan.');
+            ->with('success', 'Transaksi kas berhasil dihapus dari pembukuan (backup tersimpan dan dapat dipulihkan via AI Chatbot Bendahara).');
     }
 
     /**

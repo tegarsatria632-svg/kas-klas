@@ -23,9 +23,9 @@
 Aplikasi dilengkapi asisten AI interaktif (popup *draggable* di desktop maupun mobile) yang terhubung langsung ke database Laravel secara real-time—bukan sekadar tanya jawab teks biasa:
 
 - **Eksekusi CRUD Langsung via Chat (Two-Tier Intent Parser + Konfirmasi)**:
-  - **Bendahara (Manajemen Kas)**: Catat pemasukan/pengeluaran kas, otomatis melunasi iuran mingguan mahasiswa, edit transaksi, hapus transaksi, batalkan iuran mingguan, hingga atur tarif iuran per minggu langsung dari kolom chat.
+  - **Bendahara (Manajemen Kas & Pemulihan Backup)**: Catat pemasukan/pengeluaran kas, otomatis melunasi iuran mingguan mahasiswa, edit transaksi, hapus transaksi, batalkan iuran mingguan, atur tarif iuran per minggu, serta **melihat daftar transaksi terhapus dan memulihkannya (*restore*)** langsung via chat (dilengkapi tombol pesan cepat *Backup Terhapus* khusus Bendahara).
   - **Admin & Ketua Kelas (Akun & Semester)**: Tambah akun pengguna baru, ubah role akun, hapus akun, serta ubah semester aktif kelas via perintah bahasa alami.
-  - **Alur Konfirmasi & Audit Trail**: Setiap perintah perubahan data (CRUD) menampilkan ringkasan konfirmasi terlebih dahulu sebelum dieksekusi dan otomatis dicatat ke tabel `audit_logs`.
+  - **Alur Konfirmasi & Audit Trail**: Setiap perintah perubahan data (CRUD) maupun pemulihan backup menampilkan ringkasan konfirmasi terlebih dahulu sebelum dieksekusi dan otomatis dicatat ke tabel `audit_logs`.
 - **Arsitektur Dual-Provider AI (Auto-Fallback)**: Menggunakan **Groq API** sebagai provider utama dengan mekanisme *fallback* otomatis ke **OpenRouter API** jika terjadi kendala kuota atau limit.
 - **Utilitas Cerdas Berbasis Data Real-Time**:
   - **Broadcast WhatsApp Tagihan**: Menyusun draf pengingat iuran kas siap salin ke grup WA berdasarkan daftar mahasiswa yang menunggak.
@@ -46,6 +46,10 @@ Selain fungsionalitas utama kas kelas, sistem ini menerapkan standar keamanan da
 - **Enkripsi Kata Sandi (Bcrypt Hashing)**: Seluruh kata sandi diamankan menggunakan `Hash::make()` / `Hash::check()` (Bcrypt) dilengkapi mekanisme *self-healing* otomatis jika terdapat data sandi lama belum ter-hash.
 - **Proteksi CSRF & Auto-Refresh Token (Anti-419)**: Menggunakan middleware `VerifyCsrfToken`, endpoint penyegaran token otomatis (`/csrf-token`) untuk mencegah error *419 Page Expired* saat halaman lama terbuka, serta halaman error khusus `419.blade.php`.
 - **Integritas Data dengan Database Transaction (`DB::transaction`)**: Operasi pembayaran dan pembatalan iuran dibungkus transaksi atomik agar sinkronisasi antara tabel `dues_payments` dan `kas_transactions` tetap konsisten dan bebas data timpang.
+- **Backup & Pemulihan Transaksi Kas (`SoftDeletes` + Snapshot `Before`/`After`)**:
+  - Setiap penghapusan transaksi pada `kas_transactions` dan `dues_payments` menggunakan **Soft Delete** (`deleted_at`) dan tidak menghapus file foto bukti nota dari storage, sehingga data tetap aman tersimpan sebagai backup.
+  - Setiap pengeditan transaksi otomatis menyimpan snapshot data lama (**`before`**) dan data baru (**`after`**) dalam format JSON pada tabel `audit_logs`.
+  - **Hak Akses Eksklusif Bendahara**: Melihat daftar transaksi terhapus dan memulihkannya (*restore*) kembali ke pembukuan aktif beserta status iuran mahasiswa terkait dapat dilakukan langsung melalui **AI Chatbot** (termasuk tombol pesan cepat khusus Bendahara) dan ditolak otomatis untuk role lain (`Admin`, `Ketua Kelas`, maupun `Mahasiswa`).
 - **Audit Trail / Jejak Aktivitas (`AuditLog`)**: Setiap aksi penting (mutasi kas, iuran, ubah tarif, kelola akun, blokir login, maupun moderasi chatbot) terekam di tabel `audit_logs` beserta pelaku, sumber aksi (`web_form` / `chatbot`), payload JSON, IP Address, dan User Agent.
 - **Real-Time Presence Heartbeat**: Middleware `UpdateUserLastSeen` dan endpoint `/heartbeat` (interval 5 detik) menyinkronkan status online/offline mahasiswa di Dashboard secara langsung tanpa memuat ulang halaman.
 - **Service Layer & Dynamic Settings (`AcademicService`)**: Memisahkan logika kalender akademik (Semester 1–8, label kelas otomatis, rentang tanggal 4 minggu per bulan) serta konfigurasi tarif iuran dinamis dari controller agar kode tetap modular.

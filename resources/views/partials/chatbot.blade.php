@@ -937,6 +937,7 @@
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Siapa saja mahasiswa yang belum bayar uang kas bulan ini?')">⚠️ Rekap Nunggak</button>
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Buatkan rekap kas dalam excel')">📥 Rekap Excel</button>
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Tampilkan jejak audit aktivitas kas')">🔍 Jejak Audit</button>
+                        <button class="chatbot-quick-btn" onclick="sendQuickMessage('Tampilkan daftar transaksi kas yang sudah dihapus')">♻️ Backup Terhapus</button>
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Simulasi anggaran kas kelas')">💡 Simulasi Anggaran</button>
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Bagaimana format perintah chat untuk mencatat pemasukan dan pengeluaran kas?')">➕ Format Catat Kas</button>
                     @else
@@ -958,6 +959,7 @@
                     @elseif($userRole === 'bendahara')
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Buatkan rekap kas dalam excel')">📥 Rekap Excel</button>
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Tampilkan jejak audit aktivitas kas')">🔍 Jejak Audit</button>
+                        <button class="chatbot-quick-btn" onclick="sendQuickMessage('Tampilkan daftar transaksi kas yang sudah dihapus')">♻️ Backup Terhapus</button>
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Simulasi anggaran kas kelas')">💡 Simulasi Anggaran</button>
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Rangkum pemasukan, pengeluaran, dan saldo kas untuk semester aktif saat ini')">📈 Rekap Semester Ini</button>
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Rincikan mutasi kas bulanan tahun berjalan dari data arsip')">📊 Mutasi Bulanan</button>
@@ -995,6 +997,7 @@
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Berapa saldo kas kelas saat ini?')">💰 Saldo Kas</button>
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Buatkan rekap kas dalam excel')">📥 Rekap Excel</button>
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Tampilkan jejak audit aktivitas kas')">🔍 Jejak Audit</button>
+                        <button class="chatbot-quick-btn" onclick="sendQuickMessage('Tampilkan daftar transaksi kas yang sudah dihapus')">♻️ Backup Terhapus</button>
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Simulasi anggaran kas kelas')">💡 Simulasi Anggaran</button>
                         <button class="chatbot-quick-btn" onclick="sendQuickMessage('Lihat riwayat transaksi kas terakhir')">📋 Riwayat Kas</button>
                     @else

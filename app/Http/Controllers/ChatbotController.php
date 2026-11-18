@@ -600,6 +600,26 @@ class ChatbotController extends Controller
             ];
         }
 
+        // Deteksi Permintaan Lihat Backup / Transaksi Kas Terhapus (KHUSUS BENDAHARA SAJA)
+        $isListDeletedRequest = (
+            preg_match('/(?:transaksi|kas|catatan|data|riwayat)\s*(?:kas\s*)?(?:yang\s+)?(?:sudah\s+|pernah\s+)?(?:dihapus|terhapus)/i', $msg) ||
+            preg_match('/(?:daftar|lihat|tampilkan|cek)\s+(?:backup|sampah|trash|riwayat\s+hapus|transaksi\s+(?:ter)?hapus)/i', $msg) ||
+            preg_match('/\bbackup\s*(?:kas|transaksi)\b/i', $msg)
+        ) && !preg_match('/^(?:tolong\s+|coba\s+)?(?:pulihkan|pulih|restore|kembalikan)\b/i', $msg);
+
+        if ($isListDeletedRequest) {
+            if ($user->role !== 'bendahara') {
+                return [
+                    'reply' => "❌ **Akses Ditolak**: Anda login sebagai **{$userRoleLabel}**. Melihat daftar backup dan memulihkan transaksi kas terhapus **hanya berhak dilakukan oleh Bendahara Kelas** ({$bendaharaName}).",
+                    'is_confirmation' => false,
+                ];
+            }
+            return [
+                'reply' => $this->listDeletedTransactions($user),
+                'is_confirmation' => false,
+            ];
+        }
+
         // Deteksi permintaan mutasi arsip langsung (read-only guard)
         if (preg_match('/^(?:tolong\s+|coba\s+)?(?:hapus|delete|hilangkan|edit|ubah|ganti|tambah|input|buat)\s+(?:data\s+)?(?:arsip|rekap(?:an)?|rekapitulasi)\b/i', $msg) ||
             preg_match('/^(?:tolong\s+|coba\s+)?(?:arsip|rekap(?:an)?|rekapitulasi)\s+(?:di\s*)?(?:hapus|delete|diedit|diubah|ditambah|diinput)\b/i', $msg)) {
@@ -618,7 +638,7 @@ class ChatbotController extends Controller
         }
 
         // Filter intensi aksi mutasi kas atau akun
-        $actionTriggerWords = '/\b(?:catat|tambah|tambahkan|tambahin|input|masukkan|masukin|keluar|pengeluaran|pemasukan|kurang|edit|ubah|ganti|perbarui|update|hapus|delete|hilangkan|jadikan|tetapkan|daftarkan|buat|set|beli|biaya|bayar|batal|batalkan|batalin|cancel)\b/i';
+        $actionTriggerWords = '/\b(?:catat|tambah|tambahkan|tambahin|input|masukkan|masukin|keluar|pengeluaran|pemasukan|kurang|edit|ubah|ganti|perbarui|update|hapus|delete|hilangkan|jadikan|tetapkan|daftarkan|buat|set|beli|biaya|bayar|batal|batalkan|batalin|cancel|pulihkan|pulih|restore|kembalikan)\b/i';
         if (!preg_match($actionTriggerWords, $msg)) {
             return null; // Bukan perintah mutasi, teruskan ke Q&A normal
         }
@@ -739,6 +759,16 @@ class ChatbotController extends Controller
             return $this->handleActionWithConfirmation($parsedAction, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $message);
         }
 
+        // H. Deteksi Pulihkan / Restore Transaksi Kas Terhapus (contoh: "pulihkan transaksi #12", "restore kas 12", "pulihkan transaksi")
+        if (preg_match('/^(?:tolong\s+|coba\s+)?(?:pulihkan|pulih|restore|kembalikan)\s+(?:data\s+)?(?:transaksi|kas|catatan\s+kas|mutasi|backup)(?:\s+kas)?(?:\s+(?:id\s*)?#?(\d+))?/i', $msg, $mRestore)) {
+            $restoreId = !empty($mRestore[1]) ? (int) $mRestore[1] : null;
+            $parsedAction = [
+                'action' => 'pulihkan_transaksi',
+                'id' => $restoreId,
+            ];
+            return $this->handleActionWithConfirmation($parsedAction, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $message);
+        }
+
         // Penalaran kontekstual berbasis model AI
         $parsedAction = $this->reasonActionWithAi($message);
         if (!empty($parsedAction['action']) && $parsedAction['action'] !== 'none') {
@@ -774,8 +804,9 @@ class ChatbotController extends Controller
             case 'edit_transaksi':
             case 'batalkan_iuran':
             case 'hapus_iuran':
+            case 'pulihkan_transaksi':
                 if ($userRole !== 'bendahara') {
-                    return "❌ Akses Ditolak: Anda login sebagai **{$userRoleLabel}**. Pengelolaan kas kelas hanya berhak dilakukan oleh Bendahara Kelas ({$bendaharaName}).";
+                    return "❌ Akses Ditolak: Anda login sebagai **{$userRoleLabel}**. Pengelolaan kas dan pemulihan backup transaksi **hanya berhak dilakukan oleh Bendahara Kelas** ({$bendaharaName}).";
                 }
                 break;
 
@@ -1217,6 +1248,37 @@ class ChatbotController extends Controller
                     . "• **Otoritas**: {$userRoleLabel} ({$user->name})\n\n"
                     . "Ketik **Ya** atau **Konfirmasi** untuk menerapkan, atau ketik **Batal** untuk membatalkan.";
                 break;
+
+            case 'pulihkan_transaksi':
+                $id = isset($actionData['id']) ? (int) $actionData['id'] : 0;
+                $trashedTx = $id > 0 ? KasTransaction::onlyTrashed()->find($id) : null;
+
+                if (!$trashedTx) {
+                    $headerMsg = $id > 0
+                        ? "⚠️ Transaksi terhapus dengan ID **#{$id}** tidak ditemukan di daftar backup.\n\n"
+                        : "Untuk memulihkan transaksi kas yang sudah dihapus, mohon cantumkan **Nomor ID Transaksi**.\n\n";
+                    return $headerMsg . $this->listDeletedTransactions($user);
+                }
+
+                $relatedTrashedDues = DuesPayment::onlyTrashed()->where('kas_transaction_id', $trashedTx->id)->get();
+                $duesNote = $relatedTrashedDues->isNotEmpty()
+                    ? "\n• **Iuran Terkait**: {$relatedTrashedDues->count()} catatan iuran mingguan mahasiswa akan ikut dipulihkan."
+                    : "";
+                $deletedAtStr = $trashedTx->deleted_at ? $trashedTx->deleted_at->format('d/m/Y H:i') . ' WIB' : '-';
+                $txDateStr = $trashedTx->date ? $trashedTx->date->format('d/m/Y') : '-';
+
+                $actionData['id'] = $trashedTx->id;
+                $confirmationMsg = "♻️ **Konfirmasi Pemulihan Transaksi Kas (Backup)**\n\n"
+                    . "Apakah Anda yakin ingin memulihkan transaksi berikut kembali ke pembukuan aktif?\n"
+                    . "• **ID Transaksi**: #{$trashedTx->id}\n"
+                    . "• **Jenis**: " . ucfirst($trashedTx->type) . "\n"
+                    . "• **Nominal**: **Rp " . number_format($trashedTx->amount, 0, ',', '.') . "**\n"
+                    . "• **Tanggal Transaksi**: {$txDateStr}\n"
+                    . "• **Keterangan**: {$trashedTx->description}\n"
+                    . "• **Semester**: {$trashedTx->semester}\n"
+                    . "• **Dihapus Pada**: {$deletedAtStr}{$duesNote}\n\n"
+                    . "Ketik **Ya** atau **Konfirmasi** untuk memulihkan, atau ketik **Batal** untuk membatalkan.";
+                break;
         }
 
         if (!empty($confirmationMsg)) {
@@ -1326,6 +1388,7 @@ PEDOMAN PENALARAN:
    - catat_pengeluaran: {action:"catat_pengeluaran", amount:int, description:string}
    - edit_transaksi: {action:"edit_transaksi", id:int|null, amount:int|null, description:string|null}
    - hapus_transaksi: {action:"hapus_transaksi", id:int|null}
+   - pulihkan_transaksi: {action:"pulihkan_transaksi", id:int|null}
    - ubah_role: {action:"ubah_role", target_user:string|null, new_role:"admin"|"bendahara"|"ketua"|"mahasiswa"}
    - tambah_akun: {action:"tambah_akun", name:string, npm:string, role:string}
    - hapus_akun: {action:"hapus_akun", target_user:string|null}
@@ -1415,6 +1478,13 @@ PROMPT;
                 }
                 $id = (int) ($actionData['id'] ?? 0);
                 return $this->actionHapusTransaksi($user, $id);
+
+            case 'pulihkan_transaksi':
+                if ($userRole !== 'bendahara') {
+                    return "❌ AKSES DITOLAK: Anda login sebagai **{$userRoleLabel}**. Pemulihan transaksi kas terhapus **hanya berhak dilakukan oleh Bendahara Kelas** ({$bendaharaName}).";
+                }
+                $id = (int) ($actionData['id'] ?? 0);
+                return $this->actionPulihkanTransaksi($user, $id);
 
             case 'edit_transaksi':
                 if ($userRole !== 'bendahara') {
@@ -1943,21 +2013,48 @@ PROMPT;
 
         $activeClassSemester = AcademicService::getActiveSemester();
 
-        if ($tx->proof_image) {
-            Storage::disk('public')->delete($tx->proof_image);
-        }
-        DuesPayment::where('kas_transaction_id', $tx->id)->delete();
+        // Rekam snapshot lengkap sebelum soft-delete (foto bukti tetap dipertahankan untuk pemulihan)
+        $relatedDues = DuesPayment::where('kas_transaction_id', $tx->id)->get()->map(function ($d) {
+            return [
+                'id' => $d->id,
+                'user_id' => $d->user_id,
+                'week_number' => $d->week_number,
+                'month' => $d->month,
+                'year' => $d->year,
+                'semester' => $d->semester,
+            ];
+        })->toArray();
+
+        $beforeSnapshot = [
+            'id' => $tx->id,
+            'user_id' => $tx->user_id,
+            'type' => $tx->type,
+            'amount' => (float) $tx->amount,
+            'date' => $tx->date ? $tx->date->format('Y-m-d') : null,
+            'description' => $tx->description,
+            'semester' => $tx->semester,
+            'proof_image' => $tx->proof_image,
+            'related_dues' => $relatedDues,
+        ];
 
         $info = ucfirst($tx->type) . " Rp " . number_format($tx->amount, 0, ',', '.') . " ({$tx->description})";
         $deletedId = $tx->id;
-        $tx->delete();
+
+        DB::transaction(function () use ($tx) {
+            DuesPayment::where('kas_transaction_id', $tx->id)->delete(); // SoftDelete
+            $tx->delete(); // SoftDelete
+        });
 
         AuditLog::record(
             'hapus_transaksi',
-            "Menghapus transaksi #{$deletedId} ({$info}) via AI Chatbot",
+            "Menghapus transaksi #{$deletedId} ({$info}) via AI Chatbot [Soft Delete / Backup tersimpan]",
             $user,
             'chatbot',
-            ['id' => $deletedId, 'semester' => $activeClassSemester]
+            [
+                'id' => $deletedId,
+                'semester' => $tx->semester,
+                'before' => $beforeSnapshot,
+            ]
         );
 
         $newIn = KasTransaction::where('semester', $activeClassSemester)->where('type', 'pemasukan')->sum('amount');
@@ -1967,7 +2064,115 @@ PROMPT;
         return "✅ BERHASIL dihapus oleh Bendahara ({$user->name})!\n"
             . "- Dihapus: Transaksi #{$deletedId} ({$info})\n"
             . "- Saldo Kas Aktif Terbaru: **Rp " . number_format($newSaldo, 0, ',', '.') . "**\n"
-            . "- Data transaksi dan rekaman iuran terkait langsung tersinkronisasi di sistem.";
+            . "- Backup tersimpan aman (*Soft Delete*). Ketik **`pulihkan transaksi #{$deletedId}`** kapan saja jika ingin mengembalikannya.";
+    }
+
+    private function listDeletedTransactions($user): string
+    {
+        if (!$user || $user->role !== 'bendahara') {
+            return "❌ **Akses Ditolak**: Fitur backup & pemulihan transaksi kas **hanya berhak diakses oleh Bendahara Kelas**.";
+        }
+
+        $trashed = KasTransaction::onlyTrashed()->latest('deleted_at')->take(15)->get();
+
+        if ($trashed->isEmpty()) {
+            return "♻️ **Daftar Backup Transaksi Kas Terhapus**\n\n"
+                . "Saat ini belum ada transaksi kas yang berada di daftar backup/terhapus.\n"
+                . "Setiap transaksi yang dihapus oleh Bendahara (baik via form web maupun AI Chatbot) otomatis tersimpan aman di sini agar dapat dipulihkan sewaktu-waktu.";
+        }
+
+        $reply = "♻️ **Daftar Backup Transaksi Kas Terhapus** (Khusus Bendahara)\n\n"
+            . "Berikut transaksi yang tersimpan di backup (*Soft Delete*) dan masih dapat dipulihkan:\n\n";
+
+        foreach ($trashed as $idx => $tx) {
+            $no = $idx + 1;
+            $typeLabel = ucfirst($tx->type);
+            $nominal = number_format($tx->amount, 0, ',', '.');
+            $txDate = $tx->date ? $tx->date->format('d/m/Y') : '-';
+            $delDate = $tx->deleted_at ? $tx->deleted_at->format('d/m/Y H:i') : '-';
+            $duesCount = DuesPayment::onlyTrashed()->where('kas_transaction_id', $tx->id)->count();
+            $duesTag = $duesCount > 0 ? " | +{$duesCount} iuran mingguan" : "";
+
+            $reply .= "{$no}. **ID #{$tx->id}** — {$typeLabel} **Rp {$nominal}**\n"
+                . "   • Keterangan: {$tx->description}\n"
+                . "   • Tanggal: {$txDate} ({$tx->semester}{$duesTag}) | Dihapus: {$delDate} WIB\n";
+        }
+
+        $firstId = $trashed->first()->id;
+        $reply .= "\nUntuk mengembalikan transaksi ke pembukuan aktif, ketik perintah:\n"
+            . "• **`pulihkan transaksi #{$firstId}`** (ganti nomor ID sesuai daftar di atas)";
+
+        return $reply;
+    }
+
+    private function actionPulihkanTransaksi($user, $txId)
+    {
+        if (!$user || $user->role !== 'bendahara') {
+            return "❌ AKSES DITOLAK: Pemulihan transaksi kas terhapus **hanya berhak dilakukan oleh Bendahara Kelas**.";
+        }
+
+        $tx = $txId > 0 ? KasTransaction::onlyTrashed()->find($txId) : null;
+        if (!$tx) {
+            return "⚠️ GAGAL: Transaksi terhapus dengan ID #{$txId} tidak ditemukan di daftar backup.";
+        }
+
+        // Cek kecukupan saldo jika transaksi yang dipulihkan bertipe pengeluaran
+        if ($tx->type === 'pengeluaran') {
+            $currentIn = KasTransaction::where('semester', $tx->semester)->where('type', 'pemasukan')->sum('amount');
+            $currentOut = KasTransaction::where('semester', $tx->semester)->where('type', 'pengeluaran')->sum('amount');
+            $available = $currentIn - $currentOut;
+            if ((float) $tx->amount > $available) {
+                return "❌ GAGAL: Pemulihan pengeluaran Rp " . number_format($tx->amount, 0, ',', '.') . " melebihi saldo kas tersedia pada {$tx->semester} (Rp " . number_format($available, 0, ',', '.') . ").";
+            }
+        }
+
+        $restoredWeeks = [];
+        DB::transaction(function () use ($tx, &$restoredWeeks) {
+            $tx->restore();
+
+            $trashedDues = DuesPayment::onlyTrashed()->where('kas_transaction_id', $tx->id)->get();
+            foreach ($trashedDues as $due) {
+                $existsActive = DuesPayment::where('user_id', $due->user_id)
+                    ->where('week_number', $due->week_number)
+                    ->where('month', $due->month)
+                    ->where('year', $due->year)
+                    ->where('semester', $due->semester)
+                    ->exists();
+                if (!$existsActive) {
+                    $due->restore();
+                    $restoredWeeks[] = "Mg {$due->week_number} ({$due->month}/{$due->year})";
+                }
+            }
+        });
+
+        $info = ucfirst($tx->type) . " Rp " . number_format($tx->amount, 0, ',', '.') . " ({$tx->description})";
+        AuditLog::record(
+            'pulihkan_transaksi',
+            "Memulihkan transaksi #{$tx->id} ({$info}) dari backup via AI Chatbot",
+            $user,
+            'chatbot',
+            [
+                'id' => $tx->id,
+                'type' => $tx->type,
+                'amount' => (float) $tx->amount,
+                'semester' => $tx->semester,
+                'restored_dues' => $restoredWeeks,
+            ]
+        );
+
+        $activeClassSemester = AcademicService::getActiveSemester();
+        $newIn = KasTransaction::where('semester', $activeClassSemester)->where('type', 'pemasukan')->sum('amount');
+        $newOut = KasTransaction::where('semester', $activeClassSemester)->where('type', 'pengeluaran')->sum('amount');
+        $newSaldo = $newIn - $newOut;
+
+        $duesInfo = !empty($restoredWeeks)
+            ? "\n- Iuran Dipulihkan: **" . implode(', ', $restoredWeeks) . "**"
+            : "";
+
+        return "✅ BERHASIL dipulihkan oleh Bendahara ({$user->name})!\n"
+            . "- Dipulihkan: Transaksi **#{$tx->id}** ({$info}){$duesInfo}\n"
+            . "- Saldo Kas Aktif ({$activeClassSemester}): **Rp " . number_format($newSaldo, 0, ',', '.') . "**\n"
+            . "- Data Buku Kas, Arsip, dan status iuran mahasiswa langsung tersinkronisasi.";
     }
 
     private function actionEditTransaksi($user, $txId, $newAmountStr, $newDescription)
@@ -1984,6 +2189,16 @@ PROMPT;
         if (!$tx) {
             return "⚠️ GAGAL: Transaksi kas dengan ID #" . ($txId ?: 'terbaru') . " tidak ditemukan.";
         }
+
+        // Rekam snapshot data lama (before) sebagai backup audit sebelum diubah
+        $beforeSnapshot = [
+            'type' => $tx->type,
+            'amount' => (float) $tx->amount,
+            'date' => $tx->date ? $tx->date->format('Y-m-d') : null,
+            'description' => $tx->description,
+            'semester' => $tx->semester,
+            'proof_image' => $tx->proof_image,
+        ];
 
         $changes = [];
 
@@ -2035,18 +2250,33 @@ PROMPT;
 
         $tx->save();
 
+        $afterSnapshot = [
+            'type' => $tx->type,
+            'amount' => (float) $tx->amount,
+            'date' => $tx->date ? $tx->date->format('Y-m-d') : null,
+            'description' => $tx->description,
+            'semester' => $tx->semester,
+            'proof_image' => $tx->proof_image,
+        ];
+
         AuditLog::record(
             'edit_transaksi',
             "Mengubah transaksi #{$tx->id} (" . implode(" | ", $changes) . ") via AI Chatbot",
             $user,
             'chatbot',
-            ['id' => $tx->id, 'changes' => $changes, 'semester' => $tx->semester]
+            [
+                'id' => $tx->id,
+                'changes' => $changes,
+                'semester' => $tx->semester,
+                'before' => $beforeSnapshot,
+                'after' => $afterSnapshot,
+            ]
         );
 
         return "✅ BERHASIL diedit oleh Bendahara ({$user->name})!\n"
             . "- Transaksi: #{$tx->id}\n"
             . "- Perubahan: " . implode(" | ", $changes) . "\n"
-            . "- Buku kas telah diperbarui dan tersinkronisasi secara real-time.";
+            . "- Snapshot data lama (*before*) otomatis tersimpan di Audit Log.";
     }
 
 
@@ -2287,6 +2517,7 @@ AI SUDAH BISA melakukan CRUD data (Menambah, Mengedit, Menghapus) secara langsun
    - Tambah Transaksi: `catat pemasukan [nominal] [ket]` & `catat pengeluaran [nominal] [ket]`
    - Edit Transaksi: `edit transaksi #[id] nominal [angka]` & `edit transaksi #[id] keterangan [teks]`
    - Hapus Transaksi: `hapus transaksi #[id]`
+   - Lihat Backup Terhapus & Pulihkan: `lihat transaksi terhapus` & `pulihkan transaksi #[id]`
    - Atur Tarif Iuran Kas: `ubah tarif kas jadi [nominal]` / `atur iuran mingguan [nominal]`
    - Batalkan Iuran: `batalkan iuran [nama] minggu [ke-X]`
    - Dilarang kelola akun atau semester.
@@ -2604,6 +2835,7 @@ PROMPT;
             'catat_transaksi' => 'Pencatatan Transaksi',
             'edit_transaksi' => 'Perubahan Transaksi',
             'hapus_transaksi' => 'Penghapusan Transaksi',
+            'pulihkan_transaksi' => 'Pemulihan Transaksi Kas (Backup)',
             'bayar_iuran' => 'Pembayaran Iuran Kas',
             'batal_iuran' => 'Pembatalan Iuran Kas',
             'atur_tarif_iuran' => 'Penyesuaian Tarif Kas',
