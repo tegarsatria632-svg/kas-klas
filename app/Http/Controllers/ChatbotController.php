@@ -2483,7 +2483,7 @@ Kamu memahami tata letak fisik dan letak persis seluruh tombol pada antarmuka we
    • Sudut Kiri: Tombol Hamburger Menu (tiga garis horizontal) untuk membuka/tutup sidebar.
    • Sudut Kanan: Jam real-time, Badge Semester Aktif (contoh: Semester 5 (Kelas 5A)), dan Badge Role login.
 3. Halaman Dashboard (Menu ke-1 Sidebar):
-   • Menampilkan status tunggakan iuran kas pribadi (4 minggu M1-M4) serta daftar anggota kelas dengan indikator status Online/Offline real-time.
+   • Menampilkan ringkasan status iuran kas pribadi (4 minggu M1-M4) untuk bulan dan semester berjalan.
 4. Halaman Buku Kas Kelas (Menu ke-2 Sidebar):
    • Toolbar Atas: Filter Semester/Bulan/Tahun, tombol pintas Arsip Kas, serta tombol '+ Catat Transaksi' dan 'Atur Tarif Iuran' (khusus Bendahara).
    • Matriks Iuran Mingguan: Monitoring status bayar per mahasiswa untuk Minggu 1 s/d 4 beserta tombol 'Bayar' dan 'Batalkan' (khusus Bendahara).
@@ -3403,7 +3403,7 @@ PROMPT;
         // 17. Daftar Anggota Kelas / Data Mahasiswa
         if (preg_match('/\b(?:mahasiswa|anggota|teman|murid)\b/i', $msg)) {
             return "Cara Akses Data Anggota Kelas:\n\n"
-                . "• **Daftar Anggota & Status Online**: Langsung tersedia di menu **\"Dashboard\" (Menu ke-1 di Sidebar Kiri)** lengkap dengan pencarian nama/NPM dan filter status Online.\n"
+                . "• **Daftar Iuran Mahasiswa**: Tersedia pada matriks iuran mingguan di menu **\"Buku Kas Kelas\" (Menu ke-2 di Sidebar Kiri)**.\n"
                 . "• **Pengelolaan Akun Mahasiswa (Tambah/Ubah Role/Reset Sandi)**: Tersedia di menu **\"Kelola Akun & Semester\" (Menu ke-4 di Sidebar Kiri)** khusus Super Admin & Ketua Kelas.";
         }
 
@@ -3411,7 +3411,7 @@ PROMPT;
         if (preg_match('/\b(?:dashboard|beranda|home)\b/i', $msg)) {
             return "Cara Akses & Letak Fitur Dashboard:\n\n"
                 . "• **Posisi di Web**: Terletak di **Sidebar Kiri menu ke-1** bertuliskan **\"Dashboard\"**.\n"
-                . "• **Konten Dashboard**: Menampilkan status tunggakan iuran kas pribadi (4 minggu M1–M4) serta daftar anggota kelas dengan indikator status Online/Offline secara real-time.\n"
+                . "• **Konten Dashboard**: Menampilkan status iuran kas pribadi (4 minggu M1–M4) pada bulan dan semester aktif.\n"
                 . "• **Hak Akses**: Dapat diakses oleh seluruh pengguna.";
         }
 
@@ -3455,7 +3455,7 @@ PROMPT;
         // 22. Pertanyaan Umum Penempatan / Letak Tombol & Cara Akses Secara Keseluruhan
         return "Panduan Lengkap Navigasi & Penempatan Fitur Web Kas Kelas:\n\n"
             . "1. Sidebar Kiri (Navigasi Utama Layar):\n"
-            . "   • Menu Dashboard (ke-1): Status tunggakan kas pribadi (4 minggu) & daftar anggota kelas real-time (Online/Offline).\n"
+            . "   • Menu Dashboard (ke-1): Status iuran kas bulanan pribadi (4 minggu M1–M4).\n"
             . "   • Menu Buku Kas Kelas (ke-2): Matriks iuran mingguan mahasiswa (M1–M4) dan pencatatan kas oleh Bendahara.\n"
             . "   • Menu Arsip & Rekapitulasi (ke-3): Pusat informasi saldo kas, pemasukan, pengeluaran, dan rekapitulasi Per Bulan, Per Semester, serta Semua Periode.\n"
             . "   • Menu Kelola Akun & Semester (ke-4, khusus Super Admin & Ketua Kelas): Pengaturan semester aktif, kenaikan semester massal, dan kelola akun pengguna.\n"

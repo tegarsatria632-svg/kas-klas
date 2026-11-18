@@ -27,33 +27,6 @@ Route::get('/csrf-token', function () {
 // Authenticated Routes
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
-    Route::post('/heartbeat', function () {
-        if (auth()->check()) {
-            $user = auth()->user();
-            $user->timestamps = false;
-            $user->forceFill(['last_seen_at' => now()])->save();
-        }
-
-        $activeClassSemester = \App\Services\AcademicService::getActiveSemester();
-        $classStudents = \App\Models\User::where('semester', $activeClassSemester)
-            ->where('status_akademik', 'Aktif')
-            ->select('id', 'last_seen_at')
-            ->get();
-
-        $threshold = now()->subSeconds(10);
-        $onlineIds = [];
-        foreach ($classStudents as $s) {
-            if ((auth()->check() && $s->id === auth()->id()) || ($s->last_seen_at && $s->last_seen_at->gt($threshold))) {
-                $onlineIds[] = (int) $s->id;
-            }
-        }
-
-        return response()->json([
-            'status' => 'ok',
-            'online_count' => count($onlineIds),
-            'online_ids' => $onlineIds,
-        ]);
-    })->name('heartbeat');
 
     // Pengaturan Sandi Mandiri (User Ganti Password Sendiri)
     Route::post('/password/update', [AuthController::class, 'updatePassword'])->name('password.update');

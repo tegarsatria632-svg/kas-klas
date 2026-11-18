@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\DuesPayment;
-use App\Models\User;
 use App\Services\AcademicService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -17,13 +16,13 @@ class DashboardController extends Controller
         // 1. Data Akademik & Semester Aktif S1 Informatika UPS Tegal
         $activeClassSemester = AcademicService::getActiveSemester();
 
-        // 2. Periode Berjalan & Algoritma Penentuan Minggu Aktif
+        // 2. Periode Berjalan & Penentuan Minggu Aktif
         $today = now();
         $currentMonth = (int) $today->month;
         $currentYear = (int) $today->year;
         $activeWeek = min(4, (int) ceil($today->day / 7));
 
-        // 3. Deteksi Tunggakan Iuran Kas Pribadi (4 Minggu Sesuai Menu Kas)
+        // 3. Status Iuran Kas Bulanan Pribadi (4 Minggu Sesuai Menu Kas)
         $isDuesPending = false;
         $pendingWeeks = [];
         $paidWeeks = [];
@@ -49,17 +48,6 @@ class DashboardController extends Controller
         $tunggakanNominal = count($pendingWeeks) * $duesRate;
         $weekRanges = AcademicService::getWeekDateRanges($currentMonth, $currentYear);
 
-        // 4. Daftar Anggota Kelas & Status Online Real-Time
-        $classStudents = User::where('semester', $activeClassSemester)
-            ->where('status_akademik', 'Aktif')
-            ->orderByRaw("FIELD(role, 'ketua', 'bendahara', 'admin', 'mahasiswa')")
-            ->orderBy('name', 'asc')
-            ->get();
-
-        $onlineCount = $classStudents->filter(function ($s) {
-            return $s->isOnline();
-        })->count();
-
         $namaBulan = AcademicService::getNamaBulan($currentMonth);
         $kelasLabel = AcademicService::getKelasLabel($activeClassSemester);
 
@@ -75,9 +63,7 @@ class DashboardController extends Controller
             'duesRate',
             'tunggakanNominal',
             'weekRanges',
-            'paidWeeks',
-            'classStudents',
-            'onlineCount'
+            'paidWeeks'
         ));
     }
 }

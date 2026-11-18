@@ -625,42 +625,6 @@
                 }
             }
         }, true);
-
-        @auth
-        // 6. Real-Time Presence Sync (Sinkronisasi Kehadiran 5 Detik)
-        function sendPresenceHeartbeat() {
-            var metaToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            if (!metaToken) return;
-            fetch('{{ route("heartbeat") }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': metaToken,
-                    'Accept': 'application/json'
-                }
-            })
-            .then(function(res) { return res.json(); })
-            .then(function(data) {
-                if (window.handlePresenceSync && typeof window.handlePresenceSync === 'function') {
-                    window.handlePresenceSync(data);
-                }
-            })
-            .catch(function() {});
-        }
-        setInterval(sendPresenceHeartbeat, 5000);
-        setTimeout(sendPresenceHeartbeat, 500);
-
-        document.addEventListener('visibilitychange', function() {
-            if (document.visibilityState === 'visible') {
-                sendPresenceHeartbeat();
-            }
-        });
-
-        // Mobile BFCache & Tab Restore
-        window.addEventListener('pageshow', function() {
-            sendPresenceHeartbeat();
-        });
-        @endauth
     </script>
     @stack('scripts')
 </body>

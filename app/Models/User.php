@@ -19,7 +19,6 @@ class User extends Authenticatable
         'semester',
         'status_akademik',
         'tahun_ajaran',
-        'last_seen_at',
     ];
 
     protected $hidden = [
@@ -29,17 +28,7 @@ class User extends Authenticatable
 
     protected $casts = [
         'email_verified_at' => 'datetime',
-        'last_seen_at' => 'datetime',
     ];
-
-    public function isOnline(): bool
-    {
-        if (auth()->check() && $this->id === auth()->id()) {
-            return true;
-        }
-
-        return $this->last_seen_at && $this->last_seen_at->gt(now()->subSeconds(10));
-    }
 
     public function kasTransactions()
     {

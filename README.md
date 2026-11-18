@@ -13,7 +13,7 @@
 ## Fitur Utama
 
 - **Autentikasi & Hak Akses (Role-Based Access Control)**: Login berbasis NPM dengan 4 role (`Admin`, `Ketua Kelas`, `Bendahara`, dan `Mahasiswa`) serta ganti kata sandi mandiri.
-- **Dashboard Kelas**: Status tunggakan iuran kas bulanan pribadi (Minggu 1–4) dan daftar anggota kelas dengan indikator status online real-time.
+- **Dashboard Kelas**: Ringkasan identitas kelas & semester aktif serta status iuran kas bulanan pribadi (Minggu 1–4: lunas/tunggakan).
 - **Buku Kas Kelas**: Matriks iuran mingguan mahasiswa (M1–M4) sinkron dengan rentang tanggal kalender, pencatatan pemasukan/pengeluaran beserta bukti kuitansi, pengaturan tarif iuran, cetak nota, serta ekspor rekap ke Excel.
 - **Arsip & Rekapitulasi Kas**: Ringkasan saldo, pemasukan, dan pengeluaran berdasarkan mode *Per Bulan*, *Per Semester*, dan *Semua Periode (Semester 1–8)*.
 - **Kelola Akun & Semester**: Manajemen akun mahasiswa/pengurus, ubah role, reset password, sinkronisasi semester aktif kelas, serta kenaikan semester massal.
@@ -51,7 +51,6 @@ Selain fungsionalitas utama kas kelas, sistem ini menerapkan standar keamanan da
   - Setiap pengeditan transaksi otomatis menyimpan snapshot data lama (**`before`**) dan data baru (**`after`**) dalam format JSON pada tabel `audit_logs`.
   - **Hak Akses Eksklusif Bendahara**: Melihat daftar transaksi terhapus dan memulihkannya (*restore*) kembali ke pembukuan aktif beserta status iuran mahasiswa terkait dapat dilakukan langsung melalui **AI Chatbot** (termasuk tombol pesan cepat khusus Bendahara) dan ditolak otomatis untuk role lain (`Admin`, `Ketua Kelas`, maupun `Mahasiswa`).
 - **Audit Trail / Jejak Aktivitas (`AuditLog`)**: Setiap aksi penting (mutasi kas, iuran, ubah tarif, kelola akun, blokir login, maupun moderasi chatbot) terekam di tabel `audit_logs` beserta pelaku, sumber aksi (`web_form` / `chatbot`), payload JSON, IP Address, dan User Agent.
-- **Real-Time Presence Heartbeat**: Middleware `UpdateUserLastSeen` dan endpoint `/heartbeat` (interval 5 detik) menyinkronkan status online/offline mahasiswa di Dashboard secara langsung tanpa memuat ulang halaman.
 - **Service Layer & Dynamic Settings (`AcademicService`)**: Memisahkan logika kalender akademik (Semester 1–8, label kelas otomatis, rentang tanggal 4 minggu per bulan) serta konfigurasi tarif iuran dinamis dari controller agar kode tetap modular.
 - **Validasi Server-Side Bahasa Indonesia**: Validasi input form dan berkas unggahan (format JPG/PNG, batas ukuran) dengan pesan error terlokalisasi penuh dalam Bahasa Indonesia (`resources/lang/id/validation.php`).
 - **Optimasi Performa & Responsivitas**: Menggunakan aset produksi **Tailwind CSS** terkompilasi (*minified*), gambar format **WebP** dengan fallback PNG, serta tata letak adaptif (kartu kompak di mobile dan tabel penuh di desktop).
