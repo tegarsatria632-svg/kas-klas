@@ -1,5 +1,13 @@
 <?php
 
+$bootstrapCache = __DIR__.'/../bootstrap/cache';
+foreach (['packages.php', 'services.php', 'config.php', 'routes.php', 'events.php'] as $cacheFile) {
+    $cachePath = $bootstrapCache.'/'.$cacheFile;
+    if (is_file($cachePath)) {
+        @unlink($cachePath);
+    }
+}
+
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
 
@@ -10,14 +18,6 @@ if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php'))
 }
 
 require __DIR__.'/../vendor/autoload.php';
-
-$bootstrapCache = __DIR__.'/../bootstrap/cache';
-foreach (['packages.php', 'services.php', 'config.php', 'routes.php', 'events.php'] as $cacheFile) {
-    $cachePath = $bootstrapCache.'/'.$cacheFile;
-    if (is_file($cachePath)) {
-        @unlink($cachePath);
-    }
-}
 
 $app = require_once __DIR__.'/../bootstrap/app.php';
 
