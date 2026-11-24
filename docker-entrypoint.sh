@@ -1,12 +1,17 @@
 #!/bin/sh
 set -e
 
-mkdir -p /app/storage/framework/cache /app/storage/framework/sessions /app/storage/framework/views /app/bootstrap/cache
-chown -R www-data:www-data /app/storage /app/bootstrap/cache
-
 cd /app
-php artisan optimize:clear
-php artisan package:discover --ansi
-php artisan view:cache || true
+rm -f bootstrap/cache/packages.php bootstrap/cache/services.php
 
-exec su-exec www-data frankenphp run --config /etc/frankenphp/Caddyfile
+DATABASE_URL="${DATABASE_URL_UNPOOLED:-$DATABASE_URL}" php artisan migrate --force || true
+php -r '
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+if (Illuminate\Support\Facades\Schema::hasTable("users") && App\Models\User::count() === 0) {
+    Illuminate\Support\Facades\Artisan::call("db:seed", ["--force" => true]);
+}
+' || true
+
+exec frankenphp run --config /etc/frankenphp/Caddyfile
