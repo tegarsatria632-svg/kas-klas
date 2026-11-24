@@ -116,11 +116,14 @@ class ChatbotController extends Controller
         if ($actionResult !== null) {
             $replyText = is_array($actionResult) ? ($actionResult['reply'] ?? '') : (string) $actionResult;
             $isConfirmation = is_array($actionResult) ? ($actionResult['is_confirmation'] ?? false) : false;
-            $isSuccess = str_starts_with(trim($replyText), '✅');
+            $isSuccess = strpos(trim($replyText), '✅') === 0;
+
+            // Masking sandi baru di riwayat sesi jika pengguna mengirim perintah reset/tambah dengan password
+            $safeHistoryUserMessage = preg_replace('/\b(password|sandi|kata\s+sandi|pw)\s+(?:jadi|menjadi|ke|baru)?\s*(\S+)/i', '$1 ******', $userMessage);
 
             // Simpan riwayat interaksi ke session
             $history = session('chatbot_history', []);
-            $history[] = ['role' => 'user', 'content' => $userMessage];
+            $history[] = ['role' => 'user', 'content' => $safeHistoryUserMessage];
             $history[] = ['role' => 'assistant', 'content' => $replyText];
             if (count($history) > 12) {
                 $history = array_slice($history, -12);
@@ -388,7 +391,17 @@ class ChatbotController extends Controller
         $isAskingHowToChangeOwnPw = preg_match('/\b(?:cara|bagaimana|gimana|panduan|tata\s*cara|letak|posisi|dimana|di\s*mana)\s+.*(?:ganti|ubah|atur|reset)\s+(?:sandi|password|kata\s*sandi|pw)\b/i', $lower) ||
                                    preg_match('/\b(?:ganti|ubah|atur|reset)\s+(?:sandi|password|kata\s*sandi|pw)\s+(?:sendiri|saya|ku|pribadi|di\s*web|di\s*aplikasi)\b/i', $lower);
 
-        if (!$isAskingHowToChangeOwnPw) {
+        // Izinkan perintah CRUD administratif yang sah (reset sandi / tambah akun dengan sandi awal) masuk ke lapisan validasi RBAC + konfirmasi
+        // Tetap blokir jika pesan berisi pertanyaan/permintaan membocorkan sandi (apa/siapa/lihat/sebutkan/beritahu/tampilkan/hash/hack)
+        $isAskingToRevealSecret = preg_match('/\b(?:apa|siapa|berapa|lihat|tampilkan|sebutkan|kasih\s+tahu|beritahu|cek|tunjukkan|buka|bongkar|hack|meretas|bobol|bypass|brute\s*force|injeksi|exploit)\b/i', $lower) ||
+                                  preg_match('/\b(?:hash(?:nya)?|bcrypt|password_hash|secret_key|api_key|auth_token|credential|kredensial)\b/i', $lower);
+
+        $isAdminResetOrCreatePwCmd = !$isAskingToRevealSecret && (
+            preg_match('/^(?:tolong\s+|coba\s+)?(?:reset|setel\s+ulang|ubah|ganti)\s+(?:password|kata\s*sandi|sandi|pw)\b/i', $lower) ||
+            preg_match('/^(?:tolong\s+|coba\s+)?(?:tambah|tambahkan|daftarkan|buat)\s+(?:akun|pengguna|user|mahasiswa)\b/i', $lower)
+        );
+
+        if (!$isAskingHowToChangeOwnPw && !$isAdminResetOrCreatePwCmd) {
             $privatePatterns = [
                 '/\b(?:password(?:nya)?|kata\s*sandi(?:nya)?|sandi(?:nya)?|hash(?:nya)?|bcrypt|credential|kredensial|secret_key|api_key|auth_token)\b/i',
                 '/password_hash/i',
@@ -574,6 +587,9 @@ class ChatbotController extends Controller
                     session()->forget('chatbot_pending_action');
                     return $this->executeParsedAction($actionData, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $pending['raw_message'] ?? $message);
                 }
+
+                // 3. Jika user berpindah topik / mengirim perintah baru tanpa konfirmasi: hapus pending lama agar tidak tereksekusi tidak sengaja
+                session()->forget('chatbot_pending_action');
             } else {
                 session()->forget('chatbot_pending_action');
             }
@@ -630,15 +646,16 @@ class ChatbotController extends Controller
         }
 
         // Teruskan langsung ke AI jika input murni pertanyaan/informasi
+        $trimmedMsg = rtrim($msg);
         $isPureQuestion = preg_match('/^(?:siapa|berapa|kapan|kenapa|mengapa|apakah|adakah|gimana|bagaimana|tolong\s+jelaskan|jelaskan|apa\s+itu|tampilkan|lihat|ada\s+apa|apa\s+saja|fitur|menu|panduan|info|informasi|cara)\b/i', $msg) ||
-                          (str_ends_with(rtrim($msg), '?') && !preg_match('/^(?:catat|input|tambah|hapus|edit|ubah|batalkan|atur|daftarkan)\b/i', $msg));
+                          ($trimmedMsg !== '' && substr($trimmedMsg, -1) === '?' && !preg_match('/^(?:catat|input|tambah|hapus|edit|ubah|batalkan|atur|daftarkan|bayar|lunaskan|reset|setel|pulihkan)\b/i', $msg));
 
         if ($isPureQuestion) {
             return null; // Teruskan ke AI Q&A normal
         }
 
         // Filter intensi aksi mutasi kas atau akun
-        $actionTriggerWords = '/\b(?:catat|tambah|tambahkan|tambahin|input|masukkan|masukin|keluar|pengeluaran|pemasukan|kurang|edit|ubah|ganti|perbarui|update|hapus|delete|hilangkan|jadikan|tetapkan|daftarkan|buat|set|beli|biaya|bayar|batal|batalkan|batalin|cancel|pulihkan|pulih|restore|kembalikan)\b/i';
+        $actionTriggerWords = '/\b(?:catat|tambah|tambahkan|tambahin|input|masukkan|masukin|keluar|pengeluaran|pemasukan|kurang|edit|ubah|ganti|perbarui|update|hapus|delete|hilangkan|jadikan|tetapkan|daftarkan|buat|set|setel|reset|beli|biaya|bayar|lunaskan|lunas|batal|batalkan|batalin|cancel|pulihkan|pulih|restore|kembalikan|luluskan|alumni|aktifkan|nonaktifkan)\b/i';
         if (!preg_match($actionTriggerWords, $msg)) {
             return null; // Bukan perintah mutasi, teruskan ke Q&A normal
         }
@@ -663,25 +680,7 @@ class ChatbotController extends Controller
             $cleanedName = preg_replace('/\b(?:minggu|mg|ke|bulan|bln|semester|catatan|kas|iuran|uang|pembayaran|dong|tolong|coba|plis|please)\b/i', '', $cleanedName);
             $cleanedName = trim($cleanedName);
 
-            $targetStudent = null;
-            if (!empty($cleanedName)) {
-                $targetStudent = User::where('name', 'like', "%{$cleanedName}%")
-                    ->orWhere('npm', $cleanedName)
-                    ->first();
-
-                if (!$targetStudent) {
-                    $tokens = preg_split('/\s+/', $cleanedName);
-                    foreach ($tokens as $tok) {
-                        if (strlen($tok) >= 3) {
-                            $found = User::where('name', 'like', "%{$tok}%")->first();
-                            if ($found) {
-                                $targetStudent = $found;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+            $targetStudent = $this->findUserByQuery($cleanedName);
 
             if ($targetStudent) {
                 $parsedAction = [
@@ -693,12 +692,81 @@ class ChatbotController extends Controller
             }
         }
 
-        // B. Deteksi Ubah Semester (contoh: "ubah semester aktif ke Semester 6", "ganti semester 4", "ubah semester")
-        if (preg_match('/^(?:tolong\s+|coba\s+)?(?:ubah|ganti|pindah|set)\s+(?:semester|smt)(?:\s+aktif)?(?:\s+ke|\s+jadi)?\s*(.*)/i', $msg, $mSem)) {
+        // A2. Deteksi Pembayaran Iuran Mingguan Mahasiswa (contoh: "bayar iuran Budi minggu 1 dan 2", "lunaskan iuran Budi", "bayar iuran")
+        if (preg_match('/^(?:tolong\s+|coba\s+)?(?:bayar|bayarkan|lunaskan|lunasin|tandai\s+lunas)\s+(?:iuran|uang\s+kas|kas(?:\s+mingguan)?)(?:\s+(?:untuk|atas\s+nama|si|mahasiswa))?\s*(.*)$/i', $msg, $mPay)) {
+            $rest = trim($mPay[1] ?? '');
+            $payAll = (bool) preg_match('/\b(?:lunaskan|lunasin|semua|penuh|full|sebulan|4\s*minggu)\b/i', $msg);
+            $weeks = $this->extractWeeksFromText($rest);
+
+            $cleanedTarget = preg_replace('/(?:minggu|mg)(?:\s*ke)?\s*[\d,\s\-dan&]+/i', '', $rest);
+            $cleanedTarget = preg_replace('/\b(?:bulan|bln)\s*(?:januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|\d{1,2})\b/i', '', $cleanedTarget);
+            $cleanedTarget = preg_replace('/\b(?:tahun|thn)\s*\d{4}\b/i', '', $cleanedTarget);
+            $cleanedTarget = preg_replace('/\b(?:minggu|mg|ke|bulan|bln|ini|semua|penuh|full|lunas|iuran|kas|uang|sebesar|nominal|rp\.?\s*[\d.,]+(?:rb|ribu|k)?|dong|tolong|coba)\b/i', '', $cleanedTarget);
+            $cleanedTarget = trim(preg_replace('/\s+/', ' ', $cleanedTarget));
+
+            $parsedAction = [
+                'action' => 'bayar_iuran',
+                'student' => $cleanedTarget !== '' ? $cleanedTarget : null,
+                'weeks' => $weeks,
+                'pay_all' => $payAll,
+            ];
+            return $this->handleActionWithConfirmation($parsedAction, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $message);
+        }
+
+        // B. Deteksi Reset Password Akun (contoh: "reset password Budi jadi 123456", "setel ulang sandi 6624600022 jadi baru123", "reset password")
+        if (preg_match('/^(?:tolong\s+|coba\s+)?(?:reset|setel\s+ulang)\s+(?:password|kata\s*sandi|sandi|pw)(?:\s+(?:akun|user|pengguna|mahasiswa|untuk))?\s*(.*)$/i', $message, $mReset)) {
+            $restRaw = trim($mReset[1] ?? '');
+            $targetUser = null;
+            $newPassword = null;
+
+            if ($restRaw !== '') {
+                if (preg_match('/^(.+?)\s+(?:jadi|menjadi|ke|dengan|password|sandi|pw)\s+(\S+)$/i', $restRaw, $mParts)) {
+                    $targetUser = trim($mParts[1]);
+                    $newPassword = trim($mParts[2]);
+                } else {
+                    $targetUser = $restRaw;
+                }
+            }
+
+            $parsedAction = [
+                'action' => 'reset_password',
+                'target_user' => $targetUser,
+                'new_password' => $newPassword,
+            ];
+            return $this->handleActionWithConfirmation($parsedAction, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $message);
+        }
+
+        // B2. Deteksi Ubah Semester Aktif Kelas (hanya jika targetnya semester kelas/aktif, bukan semester mahasiswa individu)
+        if (preg_match('/^(?:tolong\s+|coba\s+)?(?:ubah|ganti|pindah|set)\s+(?:semester|smt)(?:\s+aktif(?:\s+kelas)?|\s+kelas)?(?:\s+(?:ke|jadi|menjadi))?\s*(semester\s*\d+|\d+|)$/i', $msg, $mSem)) {
             $semQuery = trim($mSem[1] ?? '');
             $parsedAction = [
                 'action' => 'ubah_semester',
                 'semester' => $semQuery,
+            ];
+            return $this->handleActionWithConfirmation($parsedAction, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $message);
+        }
+
+        // C. Deteksi Edit Akun / Status Akademik Individu Tanpa Atribut Lengkap
+        if (preg_match('/^(?:tolong\s+|coba\s+)?(?:edit|ubah|perbarui|update)\s+(?:data\s+)?(?:akun|pengguna|user|akademik|status\s+akademik)$/i', $msg)) {
+            $parsedAction = [
+                'action' => 'ubah_akademik',
+                'target_user' => null,
+            ];
+            return $this->handleActionWithConfirmation($parsedAction, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $message);
+        }
+
+        if (preg_match('/^(?:tolong\s+|coba\s+)?(?:ubah|ganti|edit)\s+(?:role|peran)(?:\s+(?:akun|pengguna|user))?$/i', $msg)) {
+            $parsedAction = [
+                'action' => 'ubah_role',
+                'target_user' => null,
+            ];
+            return $this->handleActionWithConfirmation($parsedAction, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $message);
+        }
+
+        if (preg_match('/^(?:tolong\s+|coba\s+)?(?:hapus|delete)\s+(?:data\s+)?(?:akun|pengguna|user)$/i', $msg)) {
+            $parsedAction = [
+                'action' => 'hapus_akun',
+                'target_user' => null,
             ];
             return $this->handleActionWithConfirmation($parsedAction, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $message);
         }
@@ -750,7 +818,7 @@ class ChatbotController extends Controller
         }
 
         // G. Deteksi Tambah Akun Tanpa Atribut Lengkap
-        if (preg_match('/^(?:tolong\s+|coba\s+)?(?:tambah|daftarkan|buat)\s+(?:data\s+)?(?:akun|pengguna|user)$/i', $msg)) {
+        if (preg_match('/^(?:tolong\s+|coba\s+)?(?:tambah|daftarkan|buat)\s+(?:data\s+)?(?:akun|pengguna|user|mahasiswa)$/i', $msg)) {
             $parsedAction = [
                 'action' => 'tambah_akun',
                 'name' => null,
@@ -779,7 +847,141 @@ class ChatbotController extends Controller
     }
 
     /**
-     * Memproses aksi mutasi dengan verifikasi hak akses dan meminta konfirmasi pengguna
+     * Pencarian pengguna yang aman untuk MySQL & PostgreSQL (case-insensitive, tanpa error cast integer pada kolom id)
+     */
+    private function findUserByQuery(?string $query)
+    {
+        $clean = trim((string) $query);
+        if ($clean === '') {
+            return null;
+        }
+
+        // 1. Exact match NPM
+        $byNpm = User::where('npm', $clean)->first();
+        if ($byNpm) {
+            return $byNpm;
+        }
+
+        // 2. Exact match ID hanya jika angka murni (aman di PostgreSQL bigint)
+        if (ctype_digit($clean) && strlen($clean) <= 9) {
+            $byId = User::find((int) $clean);
+            if ($byId) {
+                return $byId;
+            }
+        }
+
+        // 3. Exact case-insensitive nama lengkap
+        $lower = strtolower($clean);
+        $byExactName = User::whereRaw('LOWER(TRIM(name)) = ?', [$lower])->first();
+        if ($byExactName) {
+            return $byExactName;
+        }
+
+        // 4. Partial case-insensitive nama lengkap
+        $byLike = User::whereRaw('LOWER(name) LIKE ?', ['%' . $lower . '%'])->first();
+        if ($byLike) {
+            return $byLike;
+        }
+
+        // 5. Fallback per token nama (>= 3 huruf)
+        $tokens = preg_split('/\s+/', $lower);
+        foreach ($tokens as $tok) {
+            if (strlen($tok) >= 3) {
+                $found = User::whereRaw('LOWER(name) LIKE ?', ['%' . $tok . '%'])->first();
+                if ($found) {
+                    return $found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Ekstrak daftar angka minggu (1..4) dari teks perintah bahasa alami
+     */
+    private function extractWeeksFromText(string $text): array
+    {
+        $weeks = [];
+
+        // Rentang seperti "minggu 1-3" atau "mg 1 s/d 3" atau "minggu 1 sampai 3"
+        if (preg_match('/(?:minggu|mg)(?:\s*ke)?\s*([1-4])\s*(?:-|s\/?d|sampai|hingga)\s*([1-4])/i', $text, $mRange)) {
+            $start = min((int) $mRange[1], (int) $mRange[2]);
+            $end = max((int) $mRange[1], (int) $mRange[2]);
+            for ($w = $start; $w <= $end; $w++) {
+                $weeks[] = $w;
+            }
+        }
+
+        // Daftar minggu seperti "minggu 1, 2 dan 3" atau "mg 1 dan 4"
+        if (preg_match_all('/(?:minggu|mg)(?:\s*ke)?\s*([1-4](?:\s*(?:,|dan|&|\+)\s*[1-4])*)/i', $text, $mAll)) {
+            foreach ($mAll[1] as $group) {
+                if (preg_match_all('/[1-4]/', $group, $nums)) {
+                    foreach ($nums[0] as $n) {
+                        $weeks[] = (int) $n;
+                    }
+                }
+            }
+        }
+
+        $weeks = array_values(array_unique(array_filter($weeks, function ($w) {
+            return $w >= 1 && $w <= 4;
+        })));
+        sort($weeks);
+
+        return $weeks;
+    }
+
+    /**
+     * Sumber otorisasi tunggal (Single Source of Truth) untuk seluruh aksi CRUD berbasis Role.
+     * Mengembalikan string pesan penolakan jika tidak berhak, atau null jika diizinkan.
+     */
+    private function authorizeCrudAction(string $action, $user, string $bendaharaName, string $ketuaName, string $adminName, string $userRoleLabel): ?string
+    {
+        $userRole = $user->role;
+
+        $bendaharaActions = [
+            'atur_tarif_iuran',
+            'set_tarif_iuran',
+            'catat_pemasukan',
+            'catat_pengeluaran',
+            'bayar_iuran',
+            'hapus_transaksi',
+            'edit_transaksi',
+            'batalkan_iuran',
+            'hapus_iuran',
+            'pulihkan_transaksi',
+        ];
+
+        $adminKetuaActions = [
+            'ubah_role',
+            'tambah_akun',
+            'ubah_akademik',
+            'edit_akun',
+            'reset_password',
+            'hapus_akun',
+            'ubah_semester',
+        ];
+
+        if (in_array($action, $bendaharaActions, true)) {
+            if ($userRole !== 'bendahara') {
+                return "❌ **Akses Ditolak**: Anda login sebagai **{$userRoleLabel}**. Pengelolaan kas, pembayaran/pembatalan iuran, tarif kas, dan pemulihan backup transaksi **hanya berhak dilakukan oleh Bendahara Kelas** ({$bendaharaName}).";
+            }
+            return null;
+        }
+
+        if (in_array($action, $adminKetuaActions, true)) {
+            if (!in_array($userRole, ['admin', 'ketua'], true)) {
+                return "❌ **Akses Ditolak**: Anda login sebagai **{$userRoleLabel}**. Pengelolaan akun pengguna (tambah/edit/reset sandi/ubah role/hapus) dan semester kelas **hanya berhak dilakukan oleh Super Admin ({$adminName}) atau Ketua Kelas ({$ketuaName})**.";
+            }
+            return null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Memproses aksi mutasi dengan verifikasi hak akses, validasi ketat, dan meminta konfirmasi pengguna
      */
     private function handleActionWithConfirmation(array $actionData, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, string $rawMessage)
     {
@@ -792,86 +994,210 @@ class ChatbotController extends Controller
         }
 
         $action = $actionData['action'] ?? 'none';
-        $userRole = $user->role;
-
-        // 1. Cek otorisasi hak akses terlebih dahulu
-        switch ($action) {
-            case 'atur_tarif_iuran':
-            case 'set_tarif_iuran':
-            case 'catat_pemasukan':
-            case 'catat_pengeluaran':
-            case 'hapus_transaksi':
-            case 'edit_transaksi':
-            case 'batalkan_iuran':
-            case 'hapus_iuran':
-            case 'pulihkan_transaksi':
-                if ($userRole !== 'bendahara') {
-                    return "❌ Akses Ditolak: Anda login sebagai **{$userRoleLabel}**. Pengelolaan kas dan pemulihan backup transaksi **hanya berhak dilakukan oleh Bendahara Kelas** ({$bendaharaName}).";
-                }
-                break;
-
-            case 'ubah_role':
-            case 'tambah_akun':
-            case 'hapus_akun':
-            case 'ubah_semester':
-                if (!in_array($userRole, ['admin', 'ketua'])) {
-                    return "❌ Akses Ditolak: Anda login sebagai **{$userRoleLabel}**. Pengelolaan akun dan semester kelas hanya berhak dilakukan oleh Super Admin atau Ketua Kelas.";
-                }
-                break;
-
-            default:
-                return null;
+        if ($action === 'none') {
+            return null;
         }
 
-        // 2. Siapkan data konfirmasi spesifik berdasarkan tipe aksi
+        // 1. Cek otorisasi hak akses terlebih dahulu (RBAC ketat)
+        $authError = $this->authorizeCrudAction($action, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel);
+        if ($authError !== null) {
+            return $authError;
+        }
+
+        // 2. Validasi penuh & siapkan ringkasan konfirmasi spesifik berdasarkan tipe aksi
         $confirmationMsg = '';
         switch ($action) {
             case 'atur_tarif_iuran':
             case 'set_tarif_iuran':
                 $amount = (int) ($actionData['amount'] ?? 0);
                 $currentRate = AcademicService::getDuesRatePerWeek();
-                if ($amount < 500) {
-                    return "Untuk mengatur tarif iuran mingguan kas, mohon cantumkan atribut **Nominal Tarif Baru** secara detail:\n\n"
-                        . "• **Nominal Tarif Baru**: Besaran iuran per mahasiswa per minggu minimal Rp 500 (contoh: *5000* atau *10rb*)\n"
+                if ($amount < 500 || $amount > 1000000) {
+                    return "Untuk mengatur tarif iuran mingguan kas, mohon cantumkan atribut **Nominal Tarif Baru** secara valid:\n\n"
+                        . "• **Nominal Tarif Baru**: Minimal Rp 500 dan maksimal Rp 1.000.000 per minggu (contoh: *5000* atau *10rb*)\n"
                         . "• **Tarif Saat Ini**: Rp " . number_format($currentRate, 0, ',', '.') . " / minggu\n\n"
                         . "Contoh perintah: *ubah tarif kas jadi 5000*.";
                 }
+                if ($amount === (int) $currentRate) {
+                    return "ℹ️ Tarif iuran mingguan saat ini sudah **Rp " . number_format($currentRate, 0, ',', '.') . " / minggu**. Tidak ada perubahan yang diperlukan.";
+                }
+                $actionData['amount'] = $amount;
                 $confirmationMsg = "⚠️ **Konfirmasi Pengaturan Tarif Iuran Kas**\n\n"
                     . "Mohon periksa dan konfirmasi perubahan tarif iuran mingguan berikut:\n"
                     . "• **Tarif Saat Ini**: Rp " . number_format($currentRate, 0, ',', '.') . " / minggu\n"
-                    . "• **Tarif Baru**: Rp " . number_format($amount, 0, ',', '.') . " / minggu\n"
+                    . "• **Tarif Baru**: **Rp " . number_format($amount, 0, ',', '.') . " / minggu** (Rp " . number_format($amount * 4, 0, ',', '.') . " / bulan)\n"
                     . "• **Otoritas**: Bendahara ({$user->name})\n\n"
                     . "Ketik **Ya** atau **Konfirmasi** untuk menerapkan tarif ini, atau ketik **Batal** untuk membatalkan.";
                 break;
 
+            case 'bayar_iuran':
+                $activeClassSemester = AcademicService::getActiveSemester();
+                $studentParam = trim((string) ($actionData['student'] ?? ''));
+                $targetStudent = $studentParam !== '' ? $this->findUserByQuery($studentParam) : null;
+
+                $targetMonth = (int) now()->month;
+                $targetYear = (int) now()->year;
+                $bulanMap = [
+                    'januari' => 1, 'februari' => 2, 'maret' => 3, 'april' => 4,
+                    'mei' => 5, 'juni' => 6, 'juli' => 7, 'agustus' => 8,
+                    'september' => 9, 'oktober' => 10, 'november' => 11, 'desember' => 12,
+                ];
+                foreach ($bulanMap as $bName => $bNum) {
+                    if (preg_match('/\b(?:bulan\s+|bln\s+)?' . $bName . '\b/i', $rawMessage)) {
+                        $targetMonth = $bNum;
+                        break;
+                    }
+                }
+                if (preg_match('/\b(?:tahun|thn)\s*(202[4-8])\b/i', $rawMessage, $mYr)) {
+                    $targetYear = (int) $mYr[1];
+                }
+                $namaBulan = AcademicService::getNamaBulan($targetMonth);
+
+                if (!$targetStudent) {
+                    $unpaidStudents = [];
+                    foreach (User::where('status_akademik', 'Aktif')->orderBy('name')->take(8)->get() as $u) {
+                        $paidCnt = DuesPayment::where('user_id', $u->id)
+                            ->where('semester', $activeClassSemester)
+                            ->where('month', $targetMonth)
+                            ->where('year', $targetYear)
+                            ->where('status', 'lunas')
+                            ->count();
+                        if ($paidCnt < 4) {
+                            $unpaidStudents[] = "• **{$u->name}** (NPM: {$u->npm}) — {$paidCnt}/4 Minggu";
+                        }
+                    }
+                    $listText = !empty($unpaidStudents)
+                        ? "\n\nDaftar anggota yang belum lunas bulan {$namaBulan} {$targetYear}:\n" . implode("\n", $unpaidStudents)
+                        : '';
+                    return "Mohon sebutkan **nama atau NPM mahasiswa** yang iurannya ingin dibayarkan.{$listText}\n\n"
+                        . "Contoh perintah: *bayar iuran Budi minggu 1 dan 2* atau *lunaskan iuran Budi*.";
+                }
+
+                $paidWeeks = DuesPayment::where('user_id', $targetStudent->id)
+                    ->where('semester', $activeClassSemester)
+                    ->where('month', $targetMonth)
+                    ->where('year', $targetYear)
+                    ->where('status', 'lunas')
+                    ->pluck('week_number')
+                    ->map(function ($w) { return (int) $w; })
+                    ->toArray();
+
+                $unpaidWeeks = array_values(array_diff([1, 2, 3, 4], $paidWeeks));
+                if (empty($unpaidWeeks)) {
+                    return "ℹ️ Mahasiswa **{$targetStudent->name}** (NPM: {$targetStudent->npm}) sudah **Lunas Penuh (4/4 Minggu)** untuk bulan **{$namaBulan} {$targetYear}** ({$activeClassSemester}).";
+                }
+
+                $requestedWeeks = [];
+                if (!empty($actionData['weeks']) && is_array($actionData['weeks'])) {
+                    foreach ($actionData['weeks'] as $w) {
+                        $wi = (int) $w;
+                        if ($wi >= 1 && $wi <= 4) {
+                            $requestedWeeks[] = $wi;
+                        }
+                    }
+                    $requestedWeeks = array_values(array_unique($requestedWeeks));
+                    sort($requestedWeeks);
+                } elseif (!empty($actionData['week']) && is_numeric($actionData['week'])) {
+                    $wi = (int) $actionData['week'];
+                    if ($wi >= 1 && $wi <= 4) {
+                        $requestedWeeks = [$wi];
+                    }
+                }
+
+                $payAll = !empty($actionData['pay_all']);
+                if ($payAll) {
+                    $weeksToPay = $unpaidWeeks;
+                } elseif (!empty($requestedWeeks)) {
+                    $alreadyPaidReq = array_values(array_intersect($requestedWeeks, $paidWeeks));
+                    $weeksToPay = array_values(array_diff($requestedWeeks, $paidWeeks));
+                    if (empty($weeksToPay)) {
+                        return "⚠️ Minggu ke-" . implode(', ', $alreadyPaidReq) . " untuk **{$targetStudent->name}** bulan **{$namaBulan} {$targetYear}** sudah berstatus **Lunas**.\n\n"
+                            . "Minggu yang belum dibayar: **Minggu ke-" . implode(', ', $unpaidWeeks) . "**.\n"
+                            . "Contoh: *bayar iuran {$targetStudent->name} minggu " . $unpaidWeeks[0] . "*.";
+                    }
+                } else {
+                    return "Mahasiswa **{$targetStudent->name}** (NPM: {$targetStudent->npm}) belum membayar iuran bulan **{$namaBulan} {$targetYear}** pada **Minggu ke-" . implode(', ', $unpaidWeeks) . "**.\n\n"
+                        . "Silakan sebutkan minggu yang ingin dibayar, contoh:\n"
+                        . "• *bayar iuran {$targetStudent->name} minggu " . $unpaidWeeks[0] . "*\n"
+                        . "• *lunaskan iuran {$targetStudent->name}* (bayar semua " . count($unpaidWeeks) . " minggu tersisa)";
+                }
+
+                $rate = AcademicService::getDuesRatePerWeek();
+                $totalAmount = count($weeksToPay) * $rate;
+
+                $actionData['student_id'] = $targetStudent->id;
+                $actionData['student'] = $targetStudent->name;
+                $actionData['weeks'] = $weeksToPay;
+                $actionData['month'] = $targetMonth;
+                $actionData['year'] = $targetYear;
+                $actionData['rate'] = $rate;
+                $actionData['amount'] = $totalAmount;
+
+                $confirmationMsg = "⚠️ **Konfirmasi Pembayaran Iuran Mingguan**\n\n"
+                    . "Mohon periksa dan konfirmasi rincian pembayaran iuran berikut:\n"
+                    . "• **Mahasiswa**: {$targetStudent->name} (NPM: {$targetStudent->npm})\n"
+                    . "• **Periode**: {$namaBulan} {$targetYear} ({$activeClassSemester})\n"
+                    . "• **Minggu Dibayar**: **Minggu ke-" . implode(', ', $weeksToPay) . "** (" . count($weeksToPay) . " minggu)\n"
+                    . "• **Tarif**: Rp " . number_format($rate, 0, ',', '.') . " / minggu\n"
+                    . "• **Total Nominal**: **Rp " . number_format($totalAmount, 0, ',', '.') . "**\n"
+                    . "• **Otoritas**: Bendahara ({$user->name})\n\n"
+                    . "Ketik **Ya** atau **Konfirmasi** untuk menyimpan pembayaran, atau ketik **Batal** untuk membatalkan.";
+                break;
+
             case 'catat_pemasukan':
                 $amount = (float) ($actionData['amount'] ?? 0);
-                if ($amount < 500) {
-                    return "Untuk mencatat pemasukan kas, mohon lengkapi atribut berikut secara detail:\n\n"
+                if ($amount < 500 || $amount > 100000000) {
+                    return "Untuk mencatat pemasukan kas, mohon lengkapi atribut berikut secara valid:\n\n"
                         . "• **Nominal**: Besaran uang masuk minimal Rp 500 (contoh: *20000*, *50rb*)\n"
                         . "• **Keterangan**: Sumber pemasukan kas atau keperluannya\n"
                         . "• **Nama Mahasiswa**: (Khusus jika pembayaran iuran kas mingguan anggota)\n\n"
-                        . "Contoh perintah: *catat pemasukan 50000 sumbangan kas kelas* atau *catat pemasukan iuran Gilang 20000*.";
+                        . "Contoh perintah: *catat pemasukan 50000 sumbangan kas kelas* atau *bayar iuran Budi minggu 1*.";
                 }
                 $desc = trim((string) ($actionData['description'] ?? 'Pemasukan kas'));
+                if ($desc === '') {
+                    $desc = 'Pemasukan kas';
+                }
                 $student = isset($actionData['student']) ? (string) $actionData['student'] : null;
                 $targetStudent = $this->resolveStudentForDues($student, $desc, $rawMessage, $user);
                 $targetLabel = $targetStudent ? "{$targetStudent->name} (NPM: {$targetStudent->npm})" : "Kas Kelas Umum";
 
+                $activeClassSemester = AcademicService::getActiveSemester();
+                $duesPreview = '';
+                if ($targetStudent) {
+                    $curMonth = (int) now()->month;
+                    $curYear = (int) now()->year;
+                    $paidWeeks = DuesPayment::where('user_id', $targetStudent->id)
+                        ->where('semester', $activeClassSemester)
+                        ->where('month', $curMonth)
+                        ->where('year', $curYear)
+                        ->where('status', 'lunas')
+                        ->pluck('week_number')
+                        ->map(function ($w) { return (int) $w; })
+                        ->toArray();
+                    $unpaidWeeks = array_values(array_diff([1, 2, 3, 4], $paidWeeks));
+                    if (empty($unpaidWeeks)) {
+                        return "⚠️ Mahasiswa **{$targetStudent->name}** (NPM: {$targetStudent->npm}) sudah **Lunas Penuh (4/4 Minggu)** untuk bulan ini. Jika ini bukan iuran mingguan, sebutkan keterangan pemasukan umum tanpa kata iuran.";
+                    }
+                    $duesRate = AcademicService::getDuesRatePerWeek();
+                    $weeksCount = max(1, min(count($unpaidWeeks), (int) round($amount / max(1, $duesRate))));
+                    $previewWeeks = array_slice($unpaidWeeks, 0, $weeksCount);
+                    $duesPreview = "\n• **Sinkronisasi Iuran**: Akan melunasi **Minggu ke-" . implode(', ', $previewWeeks) . "**";
+                }
+
                 $confirmationMsg = "⚠️ **Konfirmasi Pencatatan Pemasukan Kas**\n\n"
                     . "Mohon periksa dan konfirmasi rincian pemasukan kas berikut:\n"
                     . "• **Tipe Transaksi**: Pemasukan Kas (Debit)\n"
-                    . "• **Nominal**: Rp " . number_format($amount, 0, ',', '.') . "\n"
+                    . "• **Nominal**: **Rp " . number_format($amount, 0, ',', '.') . "**\n"
                     . "• **Keterangan**: {$desc}\n"
-                    . "• **Pihak / Mahasiswa**: {$targetLabel}\n"
+                    . "• **Pihak / Mahasiswa**: {$targetLabel}{$duesPreview}\n"
+                    . "• **Periode**: {$activeClassSemester}\n"
                     . "• **Otoritas**: Bendahara ({$user->name})\n\n"
                     . "Ketik **Ya** atau **Konfirmasi** untuk mencatat transaksi ini, atau ketik **Batal** untuk membatalkan.";
                 break;
 
             case 'catat_pengeluaran':
                 $amount = (float) ($actionData['amount'] ?? 0);
-                if ($amount < 500) {
-                    return "Untuk mencatat pengeluaran kas, mohon lengkapi atribut berikut secara detail:\n\n"
+                if ($amount < 500 || $amount > 100000000) {
+                    return "Untuk mencatat pengeluaran kas, mohon lengkapi atribut berikut secara valid:\n\n"
                         . "• **Nominal**: Besaran uang keluar minimal Rp 500 (contoh: *25000*, *100rb*)\n"
                         . "• **Keterangan**: Keperluan belanja atau pengeluaran operasional kelas\n\n"
                         . "Contoh perintah: *catat pengeluaran 25000 beli spidol boardmarker*.";
@@ -882,20 +1208,21 @@ class ChatbotController extends Controller
                 $currentBalance = $currentIn - $currentOut;
 
                 if ($amount > $currentBalance) {
-                    return "Pengeluaran Rp " . number_format($amount, 0, ',', '.') . " melebihi sisa saldo kas aktif (Rp " . number_format($currentBalance, 0, ',', '.') . ").\n\nSaldo kas saat ini tidak mencukupi untuk melakukan transaksi ini.";
+                    return "❌ **Validasi Gagal**: Pengeluaran **Rp " . number_format($amount, 0, ',', '.') . "** melebihi sisa saldo kas aktif (**Rp " . number_format($currentBalance, 0, ',', '.') . "**).\n\nSaldo kas tidak boleh minus.";
                 }
 
                 $desc = trim((string) ($actionData['description'] ?? 'Pengeluaran kas'));
-                if (empty($desc) || strtolower($desc) === 'pengeluaran kas') {
+                if ($desc === '' || strtolower($desc) === 'pengeluaran kas') {
                     $desc = 'Belanja keperluan operasional kelas';
                 }
 
                 $confirmationMsg = "⚠️ **Konfirmasi Pencatatan Pengeluaran Kas**\n\n"
                     . "Mohon periksa dan konfirmasi rincian pengeluaran kas berikut:\n"
                     . "• **Tipe Transaksi**: Pengeluaran Kas (Kredit)\n"
-                    . "• **Nominal**: Rp " . number_format($amount, 0, ',', '.') . "\n"
+                    . "• **Nominal**: **Rp " . number_format($amount, 0, ',', '.') . "**\n"
                     . "• **Keterangan**: {$desc}\n"
-                    . "• **Sisa Saldo Setelah Ini**: Rp " . number_format($currentBalance - $amount, 0, ',', '.') . "\n"
+                    . "• **Saldo Saat Ini**: Rp " . number_format($currentBalance, 0, ',', '.') . "\n"
+                    . "• **Sisa Saldo Setelah Ini**: **Rp " . number_format($currentBalance - $amount, 0, ',', '.') . "**\n"
                     . "• **Otoritas**: Bendahara ({$user->name})\n\n"
                     . "Ketik **Ya** atau **Konfirmasi** untuk mencatat transaksi ini, atau ketik **Batal** untuk membatalkan.";
                 break;
@@ -903,13 +1230,7 @@ class ChatbotController extends Controller
             case 'batalkan_iuran':
             case 'hapus_iuran':
                 $studentParam = trim((string) ($actionData['student'] ?? ''));
-                $targetStudent = null;
-
-                if (!empty($studentParam)) {
-                    $targetStudent = User::where('name', 'like', "%{$studentParam}%")
-                        ->orWhere('npm', $studentParam)
-                        ->first();
-                }
+                $targetStudent = $studentParam !== '' ? $this->findUserByQuery($studentParam) : null;
 
                 if (!$targetStudent) {
                     $targetStudent = $this->resolveStudentForDues($studentParam, '', $rawMessage, null);
@@ -921,7 +1242,6 @@ class ChatbotController extends Controller
 
                 $activeClassSemester = AcademicService::getActiveSemester();
 
-                // Ambil daftar iuran lunas mahasiswa di semester aktif
                 $paidDues = DuesPayment::where('user_id', $targetStudent->id)
                     ->where('semester', $activeClassSemester)
                     ->where('status', 'lunas')
@@ -936,8 +1256,6 @@ class ChatbotController extends Controller
 
                 $week = isset($actionData['week']) && is_numeric($actionData['week']) ? (int) $actionData['week'] : null;
 
-                // JIKA BENDAHARA BELUM MENCANTUMKAN MINGGU BERAPA:
-                // Jangan langsung dieksekusi! Tanyakan secara terperinci minggu berapa.
                 if ($week === null || $week < 1 || $week > 4) {
                     $duesList = [];
                     foreach ($paidDues as $pd) {
@@ -950,7 +1268,6 @@ class ChatbotController extends Controller
                         . "Silakan sebutkan minggunya secara terperinci, contoh: *batalkan iuran {$targetStudent->name} minggu ke-" . $paidDues->first()->week_number . "*.";
                 }
 
-                // JIKA BENDAHARA SUDAH MENCANTUMKAN MINGGU:
                 $targetDue = $paidDues->where('week_number', $week)->first();
                 if (!$targetDue) {
                     $paidWeeksStr = $paidDues->pluck('week_number')->map(function ($w) {
@@ -977,7 +1294,7 @@ class ChatbotController extends Controller
                     . "• **Mahasiswa**: {$targetStudent->name} (NPM: {$targetStudent->npm})\n"
                     . "• **Iuran**: Minggu ke-{$targetDue->week_number} (Bulan {$targetDue->month}/{$targetDue->year})\n"
                     . "• **Semester**: {$targetDue->semester}\n"
-                    . "• **Pengurangan Saldo Kas**: Rp " . number_format($rate, 0, ',', '.') . "\n"
+                    . "• **Penyesuaian Kas**: Rp " . number_format($rate, 0, ',', '.') . "\n"
                     . "• **Otoritas**: Bendahara ({$user->name})\n\n"
                     . "Catatan: Pembatalan ini akan mengembalikan status minggu tersebut menjadi belum lunas dan menyesuaikan mutasi kas terkait.\n\n"
                     . "Ketik **Ya** atau **Konfirmasi** untuk membatalkan catatan iuran ini, atau ketik **Batal** untuk membatalkan.";
@@ -1024,18 +1341,34 @@ class ChatbotController extends Controller
                     }
 
                     return "Transaksi kas dengan ID #{$id} tidak ditemukan di sistem.\n\n"
-                        . "Berikut adalah transaksi kas yang tersedia pada {$activeClassSemester}:\n"
-                        . implode("\n", $list) . "\n\n"
-                        . "Silakan periksa kembali ID transaksi yang ingin Anda hapus, contoh: *hapus transaksi #{$recentKas->first()->id}*.";
+                        . (!empty($list) ? "Berikut adalah transaksi kas yang tersedia pada {$activeClassSemester}:\n" . implode("\n", $list) . "\n\n" : "")
+                        . "Silakan periksa kembali ID transaksi yang ingin Anda hapus.";
                 }
 
+                if (AcademicService::isHistoricalArchive($tx->semester, $activeClassSemester)) {
+                    return "🔒 **Validasi Ditolak**: Transaksi **#{$tx->id}** berasal dari arsip historis **{$tx->semester}** yang bersifat *read-only* dan tidak dapat dihapus.";
+                }
+
+                if ($tx->type === 'pemasukan') {
+                    $semIn = KasTransaction::where('semester', $tx->semester)->where('type', 'pemasukan')->sum('amount');
+                    $semOut = KasTransaction::where('semester', $tx->semester)->where('type', 'pengeluaran')->sum('amount');
+                    if (($semIn - $tx->amount) < $semOut) {
+                        return "❌ **Validasi Gagal**: Menghapus pemasukan **#{$tx->id}** (Rp " . number_format($tx->amount, 0, ',', '.') . ") akan membuat saldo {$tx->semester} menjadi minus karena dana sudah terpakai untuk pengeluaran.";
+                    }
+                }
+
+                $linkedDuesCount = DuesPayment::where('kas_transaction_id', $tx->id)->count();
+                $linkedDuesNote = $linkedDuesCount > 0
+                    ? "\n• **Dampak Iuran**: {$linkedDuesCount} catatan iuran mingguan terkait juga akan ikut dibatalkan (tersimpan di backup)."
+                    : "";
+
                 $confirmationMsg = "⚠️ **Konfirmasi Penghapusan Transaksi Kas**\n\n"
-                    . "Apakah Anda yakin ingin menghapus data mutasi kas berikut secara permanen?\n"
+                    . "Apakah Anda yakin ingin menghapus data mutasi kas berikut? *(Data tetap tersimpan aman di Backup / Soft Delete dan dapat dipulihkan)*\n"
                     . "• **ID Transaksi**: #{$tx->id}\n"
                     . "• **Tipe**: " . ucfirst($tx->type) . "\n"
-                    . "• **Nominal**: Rp " . number_format($tx->amount, 0, ',', '.') . "\n"
+                    . "• **Nominal**: **Rp " . number_format($tx->amount, 0, ',', '.') . "**\n"
                     . "• **Keterangan**: {$tx->description}\n"
-                    . "• **Tanggal**: " . ($tx->date ? $tx->date->format('d/m/Y') : '-') . "\n"
+                    . "• **Tanggal**: " . ($tx->date ? $tx->date->format('d/m/Y') : '-') . " ({$tx->semester}){$linkedDuesNote}\n"
                     . "• **Otoritas**: Bendahara ({$user->name})\n\n"
                     . "Ketik **Ya** atau **Konfirmasi** untuk menghapus data ini, atau ketik **Batal** untuk membatalkan.";
                 break;
@@ -1081,22 +1414,41 @@ class ChatbotController extends Controller
                     }
 
                     return "Transaksi kas dengan ID #{$id} tidak ditemukan di sistem.\n\n"
-                        . "Berikut adalah transaksi kas yang tersedia pada {$activeClassSemester}:\n"
-                        . implode("\n", $list) . "\n\n"
-                        . "Silakan periksa kembali ID transaksi yang ingin Anda ubah, contoh: *edit transaksi #{$recentKas->first()->id} nominal 25000*.";
+                        . (!empty($list) ? "Berikut adalah transaksi kas yang tersedia pada {$activeClassSemester}:\n" . implode("\n", $list) . "\n\n" : "")
+                        . "Silakan periksa kembali ID transaksi yang ingin Anda ubah.";
+                }
+
+                if (AcademicService::isHistoricalArchive($tx->semester, $activeClassSemester)) {
+                    return "🔒 **Validasi Ditolak**: Transaksi **#{$tx->id}** berasal dari arsip historis **{$tx->semester}** yang bersifat *read-only* dan tidak dapat diedit.";
                 }
 
                 $changes = [];
-                if (isset($actionData['amount']) && (float) $actionData['amount'] > 0) {
+                if (isset($actionData['amount']) && $actionData['amount'] !== null && $actionData['amount'] !== '') {
                     $newAmount = (float) $actionData['amount'];
-                    $changes[] = "Nominal: Rp " . number_format($tx->amount, 0, ',', '.') . " ➔ **Rp " . number_format($newAmount, 0, ',', '.') . "**";
+                    if ($newAmount < 500 || $newAmount > 100000000) {
+                        return "❌ **Validasi Gagal**: Nominal transaksi harus berada antara Rp 500 hingga Rp 100.000.000.";
+                    }
+                    if ($tx->type === 'pengeluaran') {
+                        $semIn = KasTransaction::where('semester', $tx->semester)->where('type', 'pemasukan')->sum('amount');
+                        $semOutOther = KasTransaction::where('semester', $tx->semester)->where('type', 'pengeluaran')->where('id', '!=', $tx->id)->sum('amount');
+                        $available = $semIn - $semOutOther;
+                        if ($newAmount > $available) {
+                            return "❌ **Validasi Gagal**: Nominal baru **Rp " . number_format($newAmount, 0, ',', '.') . "** melebihi saldo tersedia **Rp " . number_format($available, 0, ',', '.') . "**.";
+                        }
+                    }
+                    if ((float) $tx->amount !== $newAmount) {
+                        $changes[] = "Nominal: Rp " . number_format($tx->amount, 0, ',', '.') . " ➔ **Rp " . number_format($newAmount, 0, ',', '.') . "**";
+                    }
                 }
-                if (isset($actionData['description']) && !empty(trim($actionData['description']))) {
-                    $newDesc = trim($actionData['description']);
+                if (isset($actionData['description']) && trim((string) $actionData['description']) !== '') {
+                    $newDesc = trim((string) $actionData['description']);
+                    if (strlen($newDesc) > 255) {
+                        return "❌ **Validasi Gagal**: Keterangan transaksi maksimal 255 karakter.";
+                    }
                     $changes[] = "Keterangan: \"{$tx->description}\" ➔ **\"{$newDesc}\"**";
                 }
                 if (empty($changes)) {
-                    return "Mohon sebutkan perubahan nominal atau keterangan yang ingin diperbarui pada transaksi #{$id}.\nContoh: *edit transaksi #{$id} jadi Rp 30000 keterangan Keperluan Kelas*.";
+                    return "Mohon sebutkan perubahan nominal atau keterangan baru yang berbeda dari data saat ini pada transaksi #{$id}.\nContoh: *edit transaksi #{$id} jadi Rp 30000 keterangan Keperluan Kelas*.";
                 }
 
                 $confirmationMsg = "⚠️ **Konfirmasi Perubahan Transaksi Kas**\n\n"
@@ -1107,63 +1459,109 @@ class ChatbotController extends Controller
                     . "Ketik **Ya** atau **Konfirmasi** untuk memperbarui transaksi, atau ketik **Batal** untuk membatalkan.";
                 break;
 
-
-
-
-
-
-
-
-
-
-
-
-
             case 'tambah_akun':
                 $name = trim((string) ($actionData['name'] ?? ''));
                 $npm = trim((string) ($actionData['npm'] ?? ''));
-                if (empty($name) || empty($npm)) {
+                if ($name === '' || $npm === '') {
                     return "Untuk mendaftarkan akun pengguna baru ke sistem, mohon cantumkan atribut berikut secara detail:\n\n"
-                        . "• **Nama Lengkap**: Nama lengkap mahasiswa atau pengurus (contoh: *Gilang Maulana*)\n"
-                        . "• **NPM**: Nomor Pokok Mahasiswa unik (contoh: *24200099*)\n"
-                        . "• **Peran (Role)**: Hak akses akun (Pilihan: *mahasiswa*, *bendahara*, *ketua*, atau *admin*)\n\n"
-                        . "Contoh perintah: *tambah akun Gilang Maulana npm 24200099 role mahasiswa*.";
+                        . "• **Nama Lengkap**: Nama lengkap mahasiswa atau pengurus (maks. 100 karakter)\n"
+                        . "• **NPM**: Nomor Pokok Mahasiswa unik tanpa spasi (maks. 30 karakter)\n"
+                        . "• **Peran (Role)**: *mahasiswa*, *bendahara*, *ketua*, atau *admin*\n"
+                        . "• **Kata Sandi Awal** *(opsional)*: Minimal 6 karakter (jika tidak disebut, default mengikuti NPM)\n\n"
+                        . "Contoh perintah: *tambah akun Gilang Maulana npm 6624600099 role mahasiswa*.";
+                }
+                if (strlen($name) > 100) {
+                    return "❌ **Validasi Gagal**: Nama lengkap maksimal 100 karakter.";
+                }
+                if (strlen($npm) < 3 || strlen($npm) > 30 || preg_match('/\s/', $npm)) {
+                    return "❌ **Validasi Gagal**: NPM harus 3–30 karakter tanpa spasi (Anda memasukkan: `{$npm}`).";
                 }
                 if (User::where('npm', $npm)->exists()) {
-                    return "❌ Gagal: Akun dengan NPM {$npm} sudah terdaftar di sistem.";
+                    return "❌ **Validasi Gagal**: Akun dengan NPM **{$npm}** sudah terdaftar di sistem.";
                 }
-                $role = strtolower(trim((string) ($actionData['role'] ?? 'mahasiswa')));
+                $existingByName = User::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($name)])->first();
+                if ($existingByName) {
+                    return "❌ **Validasi Gagal**: Nama **{$existingByName->name}** sudah terdaftar (NPM: {$existingByName->npm}). Gunakan nama pembeda untuk menghindari akun ganda.";
+                }
+
+                $roleRaw = strtolower(trim((string) ($actionData['role'] ?? 'mahasiswa')));
+                $roleMap = ['admin' => 'admin', 'super admin' => 'admin', 'bendahara' => 'bendahara', 'ketua' => 'ketua', 'ketua kelas' => 'ketua', 'mahasiswa' => 'mahasiswa'];
+                if (!isset($roleMap[$roleRaw])) {
+                    return "❌ **Validasi Gagal**: Role '{$roleRaw}' tidak valid. Pilihan: *mahasiswa*, *bendahara*, *ketua*, atau *admin*.";
+                }
+                $role = $roleMap[$roleRaw];
+
+                $customPassword = isset($actionData['password']) ? trim((string) $actionData['password']) : '';
+                if ($customPassword !== '' && strlen($customPassword) < 6) {
+                    return "❌ **Validasi Gagal**: Kata sandi awal minimal 6 karakter.";
+                }
+
+                $activeClassSemester = AcademicService::getActiveSemester();
+                $semRaw = trim((string) ($actionData['semester'] ?? ''));
+                $targetSem = $activeClassSemester;
+                if ($semRaw !== '') {
+                    if (preg_match('/(\d+)/', $semRaw, $mSemNum)) {
+                        $candidate = 'Semester ' . $mSemNum[1];
+                        if (!in_array($candidate, AcademicService::SEMESTERS, true)) {
+                            return "❌ **Validasi Gagal**: Semester '{$semRaw}' tidak valid. Pilihan: Semester 1 s/d Semester 8.";
+                        }
+                        $targetSem = $candidate;
+                    }
+                }
+
+                $actionData['name'] = ucwords($name);
+                $actionData['npm'] = $npm;
+                $actionData['role'] = $role;
+                $actionData['semester'] = $targetSem;
+                $actionData['password'] = $customPassword;
+                $pwDisplay = $customPassword !== '' ? '****** (' . strlen($customPassword) . ' karakter kustom)' : 'Default (mengikuti NPM)';
 
                 $confirmationMsg = "⚠️ **Konfirmasi Pendaftaran Akun Pengguna**\n\n"
                     . "Apakah Anda yakin ingin mendaftarkan akun baru berikut?\n"
-                    . "• **Nama**: {$name}\n"
+                    . "• **Nama**: {$actionData['name']}\n"
                     . "• **NPM**: {$npm}\n"
-                    . "• **Peran (Role)**: " . $this->getRoleLabel($role) . "\n"
+                    . "• **Peran (Role)**: **" . $this->getRoleLabel($role) . "**\n"
+                    . "• **Semester**: {$targetSem}\n"
+                    . "• **Kata Sandi Awal**: {$pwDisplay}\n"
                     . "• **Otoritas**: {$userRoleLabel} ({$user->name})\n\n"
                     . "Ketik **Ya** atau **Konfirmasi** untuk membuat akun, atau ketik **Batal** untuk membatalkan.";
                 break;
 
             case 'ubah_role':
                 $targetQuery = trim((string) ($actionData['target_user'] ?? ''));
-                if (empty($targetQuery)) {
-                    $allUsers = User::take(6)->get();
+                if ($targetQuery === '') {
+                    $allUsers = User::orderBy('name')->take(8)->get();
                     $uList = [];
                     foreach ($allUsers as $u) {
                         $uList[] = "• **{$u->name}** (NPM: {$u->npm}, Role: " . $this->getRoleLabel($u->role) . ")";
                     }
+                    $sampleName = $allUsers->first() ? $allUsers->first()->name : 'Budi';
                     return "Mohon sebutkan nama atau NPM akun pengguna yang ingin diubah rolenya.\n\n"
-                        . "Contoh pengguna kelas:\n"
+                        . "Daftar pengguna kelas:\n"
                         . implode("\n", $uList) . "\n\n"
-                        . "Contoh perintah: *ubah role {$allUsers->first()->name} jadi bendahara*.";
+                        . "Contoh perintah: *ubah role {$sampleName} jadi bendahara*.";
                 }
-                $target = User::where('npm', $targetQuery)->orWhere('name', 'like', "%{$targetQuery}%")->first();
+                $target = $this->findUserByQuery($targetQuery);
                 if (!$target) {
-                    return "❌ Gagal: Akun pengguna '{$targetQuery}' tidak ditemukan.";
+                    return "❌ **Validasi Gagal**: Akun pengguna '{$targetQuery}' tidak ditemukan.";
+                }
+                if ($target->id === $user->id) {
+                    return "❌ **Validasi Gagal**: Anda tidak dapat mengubah role akun Anda sendiri demi mencegah hilangnya akses admin/pengurus.";
                 }
 
-                $roleRaw = strtolower(trim((string) ($actionData['new_role'] ?? $actionData['role'] ?? 'mahasiswa')));
-                $roleMap = ['admin' => 'admin', 'super admin' => 'admin', 'bendahara' => 'bendahara', 'ketua' => 'ketua', 'mahasiswa' => 'mahasiswa'];
-                $newRole = $roleMap[$roleRaw] ?? 'mahasiswa';
+                $roleRaw = strtolower(trim((string) ($actionData['new_role'] ?? $actionData['role'] ?? '')));
+                $roleMap = ['admin' => 'admin', 'super admin' => 'admin', 'bendahara' => 'bendahara', 'ketua' => 'ketua', 'ketua kelas' => 'ketua', 'mahasiswa' => 'mahasiswa'];
+                if ($roleRaw === '' || !isset($roleMap[$roleRaw])) {
+                    return "❌ **Validasi Gagal**: Mohon sebutkan role baru yang valid (*admin*, *bendahara*, *ketua*, atau *mahasiswa*).\nContoh: *ubah role {$target->name} jadi bendahara*.";
+                }
+                $newRole = $roleMap[$roleRaw];
+                if ($target->role === $newRole) {
+                    return "ℹ️ Akun **{$target->name}** (NPM: {$target->npm}) saat ini sudah berstatus **" . $this->getRoleLabel($newRole) . "**. Tidak ada perubahan yang diperlukan.";
+                }
+
+                $actionData['target_user_id'] = $target->id;
+                $actionData['target_user'] = $target->npm;
+                $actionData['new_role'] = $newRole;
 
                 $confirmationMsg = "⚠️ **Konfirmasi Perubahan Hak Akses Role**\n\n"
                     . "Apakah Anda yakin ingin mengubah hak akses akun pengguna berikut?\n"
@@ -1174,32 +1572,179 @@ class ChatbotController extends Controller
                     . "Ketik **Ya** atau **Konfirmasi** untuk mengubah hak akses, atau ketik **Batal** untuk membatalkan.";
                 break;
 
+            case 'ubah_akademik':
+            case 'edit_akun':
+                $targetQuery = trim((string) ($actionData['target_user'] ?? ''));
+                if ($targetQuery === '') {
+                    $allUsers = User::orderBy('name')->take(8)->get();
+                    $uList = [];
+                    foreach ($allUsers as $u) {
+                        $uList[] = "• **{$u->name}** (NPM: {$u->npm} | {$u->semester} | {$u->status_akademik})";
+                    }
+                    $sampleName = $allUsers->first() ? $allUsers->first()->name : 'Budi';
+                    return "Untuk mengubah data atau status akademik pengguna, sebutkan **nama/NPM** dan atribut yang ingin diubah (**nama**, **semester**, **status akademik**, atau **tahun ajaran**).\n\n"
+                        . "Daftar pengguna kelas:\n"
+                        . implode("\n", $uList) . "\n\n"
+                        . "Contoh perintah:\n"
+                        . "• *ubah status akademik {$sampleName} jadi Lulus / Alumni*\n"
+                        . "• *ubah semester {$sampleName} jadi Semester 6*\n"
+                        . "• *edit akun {$sampleName} nama jadi Nama Baru*";
+                }
+
+                $target = $this->findUserByQuery($targetQuery);
+                if (!$target) {
+                    return "❌ **Validasi Gagal**: Akun pengguna '{$targetQuery}' tidak ditemukan.";
+                }
+
+                $updates = [];
+                $diffLines = [];
+
+                // Validasi perubahan nama
+                $newName = isset($actionData['new_name']) ? trim((string) $actionData['new_name']) : '';
+                if ($newName !== '' && $newName !== $target->name) {
+                    if (strlen($newName) > 100) {
+                        return "❌ **Validasi Gagal**: Nama lengkap maksimal 100 karakter.";
+                    }
+                    $dupName = User::where('id', '!=', $target->id)->whereRaw('LOWER(TRIM(name)) = ?', [strtolower($newName)])->first();
+                    if ($dupName) {
+                        return "❌ **Validasi Gagal**: Nama **{$dupName->name}** sudah digunakan oleh NPM {$dupName->npm}.";
+                    }
+                    $updates['name'] = ucwords($newName);
+                    $diffLines[] = "• **Nama**: {$target->name} ➔ **{$updates['name']}**";
+                }
+
+                // Validasi perubahan semester individu
+                $newSemRaw = isset($actionData['semester']) ? trim((string) $actionData['semester']) : '';
+                if ($newSemRaw !== '') {
+                    $newSem = preg_match('/(\d+)/', $newSemRaw, $mS) ? ('Semester ' . $mS[1]) : ucwords(strtolower($newSemRaw));
+                    if (!in_array($newSem, AcademicService::SEMESTERS, true)) {
+                        return "❌ **Validasi Gagal**: Semester '{$newSemRaw}' tidak valid. Pilihan: Semester 1 s/d Semester 8.";
+                    }
+                    if ($newSem !== $target->semester) {
+                        $updates['semester'] = $newSem;
+                        $diffLines[] = "• **Semester**: {$target->semester} ➔ **{$newSem}**";
+                    }
+                }
+
+                // Validasi perubahan status akademik
+                $newStatusRaw = isset($actionData['status_akademik']) ? strtolower(trim((string) $actionData['status_akademik'])) : '';
+                if ($newStatusRaw !== '') {
+                    if (in_array($newStatusRaw, ['aktif', 'active'], true)) {
+                        $newStatus = 'Aktif';
+                    } elseif (in_array($newStatusRaw, ['lulus', 'alumni', 'lulus / alumni', 'lulus/alumni', 'nonaktif'], true)) {
+                        $newStatus = 'Lulus / Alumni';
+                    } else {
+                        return "❌ **Validasi Gagal**: Status akademik '{$newStatusRaw}' tidak valid. Pilihan: **Aktif** atau **Lulus / Alumni**.";
+                    }
+                    if ($newStatus !== ($target->status_akademik ?? 'Aktif')) {
+                        $updates['status_akademik'] = $newStatus;
+                        $diffLines[] = "• **Status Akademik**: " . ($target->status_akademik ?? 'Aktif') . " ➔ **{$newStatus}**";
+                    }
+                }
+
+                // Validasi perubahan tahun ajaran
+                $newTa = isset($actionData['tahun_ajaran']) ? trim((string) $actionData['tahun_ajaran']) : '';
+                if ($newTa !== '' && $newTa !== (string) $target->tahun_ajaran) {
+                    if (strlen($newTa) > 30) {
+                        return "❌ **Validasi Gagal**: Tahun ajaran maksimal 30 karakter.";
+                    }
+                    $updates['tahun_ajaran'] = $newTa;
+                    $diffLines[] = "• **Tahun Ajaran**: " . ($target->tahun_ajaran ?: '-') . " ➔ **{$newTa}**";
+                }
+
+                if (empty($updates)) {
+                    return "ℹ️ Tidak ada perubahan data baru untuk **{$target->name}** (NPM: {$target->npm}).\n\n"
+                        . "Data saat ini: {$target->semester} | Status: " . ($target->status_akademik ?? 'Aktif') . " | TA: " . ($target->tahun_ajaran ?: '-') . ".\n"
+                        . "Sebutkan atribut yang ingin diubah (nama, semester, status akademik, atau tahun ajaran).";
+                }
+
+                $actionData['target_user_id'] = $target->id;
+                $actionData['updates'] = $updates;
+
+                $confirmationMsg = "⚠️ **Konfirmasi Perubahan Data / Status Akademik Akun**\n\n"
+                    . "Apakah Anda yakin ingin memperbarui data pengguna berikut?\n"
+                    . "• **Pengguna**: {$target->name} (NPM: {$target->npm})\n"
+                    . implode("\n", $diffLines) . "\n"
+                    . "• **Otoritas**: {$userRoleLabel} ({$user->name})\n\n"
+                    . "Ketik **Ya** atau **Konfirmasi** untuk menyimpan perubahan, atau ketik **Batal** untuk membatalkan.";
+                break;
+
+            case 'reset_password':
+                $targetQuery = trim((string) ($actionData['target_user'] ?? ''));
+                $newPassword = trim((string) ($actionData['new_password'] ?? ''));
+
+                if ($targetQuery === '') {
+                    $allUsers = User::where('id', '!=', $user->id)->orderBy('name')->take(6)->get();
+                    $uList = [];
+                    foreach ($allUsers as $u) {
+                        $uList[] = "• **{$u->name}** (NPM: {$u->npm})";
+                    }
+                    $sampleName = $allUsers->first() ? $allUsers->first()->name : 'Budi';
+                    return "Untuk menyetel ulang kata sandi pengguna lain, cantumkan **nama/NPM** dan **kata sandi baru** (minimal 6 karakter).\n\n"
+                        . (!empty($uList) ? "Daftar pengguna:\n" . implode("\n", $uList) . "\n\n" : "")
+                        . "Contoh perintah: *reset password {$sampleName} jadi sandibaru123*.";
+                }
+
+                $target = $this->findUserByQuery($targetQuery);
+                if (!$target) {
+                    return "❌ **Validasi Gagal**: Akun pengguna '{$targetQuery}' tidak ditemukan.";
+                }
+                if ($target->id === $user->id) {
+                    return "ℹ️ Untuk mengganti kata sandi akun Anda sendiri, gunakan tombol **Pengaturan Sandi** di bagian bawah sidebar kiri agar lebih aman.";
+                }
+                if ($newPassword === '') {
+                    return "Mohon cantumkan **kata sandi baru** (minimal 6 karakter) untuk akun **{$target->name}** (NPM: {$target->npm}).\n\nContoh perintah: *reset password {$target->npm} jadi sandibaru123*.";
+                }
+                if (strlen($newPassword) < 6) {
+                    return "❌ **Validasi Gagal**: Kata sandi baru minimal **6 karakter** (Anda memasukkan " . strlen($newPassword) . " karakter).";
+                }
+
+                $actionData['target_user_id'] = $target->id;
+                $actionData['new_password'] = $newPassword;
+
+                $confirmationMsg = "⚠️ **Konfirmasi Reset Kata Sandi Akun**\n\n"
+                    . "Apakah Anda yakin ingin menyetel ulang kata sandi akun pengguna berikut?\n"
+                    . "• **Pengguna**: {$target->name} (NPM: {$target->npm})\n"
+                    . "• **Peran**: " . $this->getRoleLabel($target->role) . "\n"
+                    . "• **Kata Sandi Baru**: `******` (" . strlen($newPassword) . " karakter, terenkripsi Bcrypt)\n"
+                    . "• **Otoritas**: {$userRoleLabel} ({$user->name})\n\n"
+                    . "Ketik **Ya** atau **Konfirmasi** untuk menyetel ulang sandi, atau ketik **Batal** untuk membatalkan.";
+                break;
+
             case 'hapus_akun':
                 $targetQuery = trim((string) ($actionData['target_user'] ?? ''));
-                if (empty($targetQuery)) {
-                    $allUsers = User::where('id', '!=', $user->id)->take(6)->get();
+                if ($targetQuery === '') {
+                    $allUsers = User::where('id', '!=', $user->id)->orderBy('name')->take(6)->get();
                     $uList = [];
                     foreach ($allUsers as $u) {
                         $uList[] = "• **{$u->name}** (NPM: {$u->npm}, Role: " . $this->getRoleLabel($u->role) . ")";
                     }
+                    if (empty($uList)) {
+                        return "ℹ️ Belum ada akun pengguna lain selain akun Anda sendiri.";
+                    }
                     return "Mohon sebutkan nama atau NPM akun pengguna yang ingin dihapus.\n\n"
-                        . "Contoh pengguna kelas:\n"
+                        . "Daftar pengguna kelas:\n"
                         . implode("\n", $uList) . "\n\n"
                         . "Contoh perintah: *hapus akun {$allUsers->first()->name}*.";
                 }
-                $target = User::where('npm', $targetQuery)->orWhere('id', $targetQuery)->orWhere('name', 'like', "%{$targetQuery}%")->first();
+                $target = $this->findUserByQuery($targetQuery);
                 if (!$target) {
-                    return "❌ Gagal: Akun pengguna '{$targetQuery}' tidak ditemukan.";
+                    return "❌ **Validasi Gagal**: Akun pengguna '{$targetQuery}' tidak ditemukan.";
                 }
                 if ($target->id === $user->id) {
-                    return "❌ Gagal: Anda tidak dapat menghapus akun Anda sendiri.";
+                    return "❌ **Validasi Gagal**: Anda tidak dapat menghapus akun Anda sendiri.";
                 }
+
+                $duesCount = DuesPayment::where('user_id', $target->id)->count();
+                $duesWarn = $duesCount > 0 ? "\n• **Catatan Iuran**: {$duesCount} riwayat iuran mahasiswa ini juga akan dihapus." : "";
+                $actionData['target_user_id'] = $target->id;
+                $actionData['target_user'] = $target->npm;
 
                 $confirmationMsg = "⚠️ **Konfirmasi Penghapusan Akun Pengguna**\n\n"
                     . "Apakah Anda yakin ingin menghapus akun pengguna berikut secara permanen?\n"
                     . "• **Nama**: {$target->name}\n"
                     . "• **NPM**: {$target->npm}\n"
-                    . "• **Peran**: " . $this->getRoleLabel($target->role) . "\n"
+                    . "• **Peran**: " . $this->getRoleLabel($target->role) . "{$duesWarn}\n"
                     . "• **Otoritas**: {$userRoleLabel} ({$user->name})\n\n"
                     . "Ketik **Ya** atau **Konfirmasi** untuk menghapus akun ini, atau ketik **Batal** untuk membatalkan.";
                 break;
@@ -1208,13 +1753,13 @@ class ChatbotController extends Controller
                 $targetSemesterRaw = trim((string) ($actionData['semester'] ?? ''));
                 $currentSem = AcademicService::getActiveSemester();
 
-                if (empty($targetSemesterRaw)) {
+                if ($targetSemesterRaw === '') {
                     $semOptions = [];
                     foreach (AcademicService::SEMESTERS as $s) {
-                        $semOptions[] = "• **{$s}** (" . AcademicService::getKelasLabel($s) . ")";
+                        $semOptions[] = "• **{$s}** (Kelas " . AcademicService::getKelasLabel($s) . ")";
                     }
                     return "Untuk mengubah semester aktif perkuliahan, mohon cantumkan atribut **Semester Baru** secara spesifik:\n\n"
-                        . "• **Semester Aktif Saat Ini**: {$currentSem} (" . AcademicService::getKelasLabel($currentSem) . ")\n"
+                        . "• **Semester Aktif Saat Ini**: {$currentSem} (Kelas " . AcademicService::getKelasLabel($currentSem) . ")\n"
                         . "• **Pilihan Semester Tersedia**:\n"
                         . implode("\n", $semOptions) . "\n\n"
                         . "Contoh perintah: *ubah semester aktif ke Semester 6* atau *ganti semester 4*.";
@@ -1226,25 +1771,29 @@ class ChatbotController extends Controller
                     $targetSemester = ucwords(strtolower($targetSemesterRaw));
                 }
 
-                if (!in_array($targetSemester, AcademicService::SEMESTERS)) {
+                if (!in_array($targetSemester, AcademicService::SEMESTERS, true)) {
                     $semOptions = [];
                     foreach (AcademicService::SEMESTERS as $s) {
-                        $semOptions[] = "• **{$s}** (" . AcademicService::getKelasLabel($s) . ")";
+                        $semOptions[] = "• **{$s}** (Kelas " . AcademicService::getKelasLabel($s) . ")";
                     }
-                    return "Pilihan semester '{$targetSemesterRaw}' tidak valid.\n\n"
-                        . "Pilihan semester yang tersedia di sistem:\n"
+                    return "❌ **Validasi Gagal**: Pilihan semester '{$targetSemesterRaw}' tidak valid.\n\n"
+                        . "Pilihan semester yang tersedia:\n"
                         . implode("\n", $semOptions) . "\n\n"
                         . "Contoh perintah: *ubah semester aktif ke Semester 6*.";
                 }
 
                 if ($targetSemester === $currentSem) {
-                    return "ℹ️ Sistem saat ini sudah berada pada **{$currentSem}** (" . AcademicService::getKelasLabel($currentSem) . "). Tidak ada perubahan yang diperlukan.";
+                    return "ℹ️ Sistem saat ini sudah berada pada **{$currentSem}** (Kelas " . AcademicService::getKelasLabel($currentSem) . "). Tidak ada perubahan yang diperlukan.";
                 }
 
-                $confirmationMsg = "⚠️ **Konfirmasi Pengalihan Semester Aktif**\n\n"
+                $activeCount = User::where('status_akademik', 'Aktif')->count();
+                $actionData['semester'] = $targetSemester;
+
+                $confirmationMsg = "⚠️ **Konfirmasi Pengalihan Semester Aktif Kelas**\n\n"
                     . "Apakah Anda yakin ingin mengubah semester perkuliahan aktif kelas?\n"
-                    . "• **Semester Saat Ini**: {$currentSem}\n"
+                    . "• **Semester Saat Ini**: {$currentSem} (Kelas " . AcademicService::getKelasLabel($currentSem) . ")\n"
                     . "• **Semester Baru**: **{$targetSemester}** (Kelas " . AcademicService::getKelasLabel($targetSemester) . ")\n"
+                    . "• **Sinkronisasi**: {$activeCount} akun berstatus Aktif & periode kas otomatis disesuaikan.\n"
                     . "• **Otoritas**: {$userRoleLabel} ({$user->name})\n\n"
                     . "Ketik **Ya** atau **Konfirmasi** untuk menerapkan, atau ketik **Batal** untuk membatalkan.";
                 break;
@@ -1258,6 +1807,15 @@ class ChatbotController extends Controller
                         ? "⚠️ Transaksi terhapus dengan ID **#{$id}** tidak ditemukan di daftar backup.\n\n"
                         : "Untuk memulihkan transaksi kas yang sudah dihapus, mohon cantumkan **Nomor ID Transaksi**.\n\n";
                     return $headerMsg . $this->listDeletedTransactions($user);
+                }
+
+                if ($trashedTx->type === 'pengeluaran') {
+                    $semIn = KasTransaction::where('semester', $trashedTx->semester)->where('type', 'pemasukan')->sum('amount');
+                    $semOut = KasTransaction::where('semester', $trashedTx->semester)->where('type', 'pengeluaran')->sum('amount');
+                    $available = $semIn - $semOut;
+                    if ((float) $trashedTx->amount > $available) {
+                        return "❌ **Validasi Gagal**: Memulihkan pengeluaran **#{$trashedTx->id}** (Rp " . number_format($trashedTx->amount, 0, ',', '.') . ") melebihi saldo tersedia pada {$trashedTx->semester} (Rp " . number_format($available, 0, ',', '.') . ").";
+                    }
                 }
 
                 $relatedTrashedDues = DuesPayment::onlyTrashed()->where('kas_transaction_id', $trashedTx->id)->get();
@@ -1276,9 +1834,13 @@ class ChatbotController extends Controller
                     . "• **Tanggal Transaksi**: {$txDateStr}\n"
                     . "• **Keterangan**: {$trashedTx->description}\n"
                     . "• **Semester**: {$trashedTx->semester}\n"
-                    . "• **Dihapus Pada**: {$deletedAtStr}{$duesNote}\n\n"
+                    . "• **Dihapus Pada**: {$deletedAtStr}{$duesNote}\n"
+                    . "• **Otoritas**: Bendahara ({$user->name})\n\n"
                     . "Ketik **Ya** atau **Konfirmasi** untuk memulihkan, atau ketik **Batal** untuk membatalkan.";
                 break;
+
+            default:
+                return null;
         }
 
         if (!empty($confirmationMsg)) {
@@ -1352,8 +1914,8 @@ class ChatbotController extends Controller
      */
     private function reasonActionWithAi(string $message): array
     {
-        $users = User::all(['id', 'name', 'npm', 'role'])->map(function($u) {
-            return "{$u->name} [NPM: {$u->npm}, Role: {$u->role}]";
+        $users = User::all(['id', 'name', 'npm', 'role', 'semester', 'status_akademik'])->map(function($u) {
+            return "{$u->name} [NPM: {$u->npm}, Role: {$u->role}, {$u->semester}, {$u->status_akademik}]";
         })->implode('; ');
 
         $activeSemester = AcademicService::getActiveSemester();
@@ -1366,34 +1928,41 @@ class ChatbotController extends Controller
 
         $systemPrompt = <<<PROMPT
 Kamu adalah AI Action Reasoner untuk Sistem Pengelolaan Kas Kelas UPS Tegal.
-Tugas: Analisis pesan pengguna secara teliti dan pahami maksud manusia untuk menghasilkan JSON aksi.
+Tugas: Analisis pesan pengguna secara teliti dan pahami maksud manusia untuk menghasilkan JSON aksi CRUD yang presisi.
 
 DATA SISTEM REAL-TIME:
 - Pengguna: [{$users}]
 - Kas Terbaru: [{$recentKas}]
-- Semester: {$activeSemester}
+- Semester Aktif: {$activeSemester}
 
 PEDOMAN PENALARAN:
-1. INTENSI: Jika HANYA BERTANYA / minta panduan / cek ketersediaan data (contoh: "bagaimana cara...", "apakah ada...", "bisa tolong jelaskan...", "apa fungsi..."), kembalikan {"action":"none"}.
+1. INTENSI: Jika HANYA BERTANYA / minta panduan / cek data (contoh: "bagaimana cara...", "apakah ada...", "siapa yang...", "berapa saldo..."), kembalikan {"action":"none"}.
 2. PENCOCOKAN DATA SISTEM:
-   - Untuk ubah role / hapus akun: cari nama/NPM di daftar Pengguna.
+   - Untuk ubah_role / ubah_akademik / reset_password / hapus_akun: cocokkan nama/NPM dari daftar Pengguna.
    - Untuk kas: konversi nominal angka ("15rb" -> 15000, "50k" -> 50000, "100 ribu" -> 100000).
-   - Untuk catat_pemasukan: Jika terkait iuran mahasiswa (misal: "gilang bayar kas", "uang kas lutfi", "iuran tegar", atau menyebut nama/NPM mahasiswa di daftar Pengguna), isi "student" dengan nama lengkap atau NPM mahasiswa tersebut. Jika tidak menyebut nama orang, set "student": null.
-   - Untuk batalkan / hapus iuran mahasiswa (misal: "hapus catatan iuran tegar", "batalkan iuran tegar minggu 2", "hapus uang kas tegar", "batalkan kas gilang"): GUNAKAN action "batalkan_iuran" (BUKAN hapus_transaksi). Isi "student" dengan nama mahasiswa, dan isi "week" dengan angka minggu (1-4) jika disebutkan, atau null jika minggu belum disebutkan.
-   - Untuk hapus_transaksi / edit_transaksi: Hanya untuk transaksi kas umum. Jika tidak ada angka nomor ID transaksi yang dicantumkan (contoh: "hapus transaksi", "hapus kas", "edit transaksi"), isi "id": null.
-   - Untuk ubah semester (misal: "ubah semester aktif ke Semester 6", "ganti semester 4", "ubah semester"): GUNAKAN action "ubah_semester". Isi "semester" dengan string semester atau null jika belum dicantumkan.
+   - Untuk bayar_iuran: jika perintah membayar/melunasi iuran mingguan mahasiswa (misal: "bayar iuran Budi minggu 1 dan 2", "lunaskan iuran Budi", "Budi bayar kas minggu 3"), GUNAKAN action "bayar_iuran" dengan "student", "weeks" (array angka 1..4 atau []), dan "pay_all" (true jika lunaskan semua/penuh).
+   - Untuk catat_pemasukan: untuk pemasukan kas umum atau pemasukan dengan nominal eksplisit (misal: "catat pemasukan 50000 sumbangan"). Jika menyebut mahasiswa + nominal, isi "student".
+   - Untuk batalkan_iuran: jika membatalkan/menghapus status lunas iuran mahasiswa (misal: "batalkan iuran tegar minggu 2"), GUNAKAN action "batalkan_iuran" dengan "student" dan "week" (1..4 atau null).
+   - Untuk hapus_transaksi / edit_transaksi / pulihkan_transaksi: isi "id" dengan angka ID atau null jika tidak disebut.
+   - Untuk ubah_akademik: jika mengubah NAMA, SEMESTER INDIVIDU, STATUS AKADEMIK (Aktif / Lulus / Alumni), atau TAHUN AJARAN seorang pengguna tertentu (misal: "jadikan Budi alumni", "ubah semester Budi jadi Semester 6", "edit nama Budi jadi Budi Santoso"), GUNAKAN action "ubah_akademik" (BUKAN ubah_semester).
+   - Untuk ubah_semester: HANYA untuk mengubah semester AKTIF seluruh kelas (misal: "ubah semester aktif ke Semester 6").
+   - Untuk reset_password: jika menyetel ulang kata sandi pengguna lain (misal: "reset password Budi jadi baru123"), GUNAKAN action "reset_password" dengan "target_user" dan "new_password" (atau null jika belum disebut).
+   - Untuk tambah_akun: isi "name", "npm", "role" (default "mahasiswa"), opsional "password" (string|null) dan "semester" (string|null).
 3. AKSI YANG DIDUKUNG:
-   - batalkan_iuran: {action:"batalkan_iuran", student:string, week:int|null}
+   - bayar_iuran: {action:"bayar_iuran", student:string|null, weeks:int[], pay_all:bool}
+   - batalkan_iuran: {action:"batalkan_iuran", student:string|null, week:int|null}
    - catat_pemasukan: {action:"catat_pemasukan", amount:int, description:string, student:string|null}
    - catat_pengeluaran: {action:"catat_pengeluaran", amount:int, description:string}
    - edit_transaksi: {action:"edit_transaksi", id:int|null, amount:int|null, description:string|null}
    - hapus_transaksi: {action:"hapus_transaksi", id:int|null}
    - pulihkan_transaksi: {action:"pulihkan_transaksi", id:int|null}
-   - ubah_role: {action:"ubah_role", target_user:string|null, new_role:"admin"|"bendahara"|"ketua"|"mahasiswa"}
-   - tambah_akun: {action:"tambah_akun", name:string, npm:string, role:string}
+   - atur_tarif_iuran: {action:"atur_tarif_iuran", amount:int}
+   - tambah_akun: {action:"tambah_akun", name:string|null, npm:string|null, role:string, password:string|null, semester:string|null}
+   - ubah_role: {action:"ubah_role", target_user:string|null, new_role:"admin"|"bendahara"|"ketua"|"mahasiswa"|null}
+   - ubah_akademik: {action:"ubah_akademik", target_user:string|null, new_name:string|null, semester:string|null, status_akademik:string|null, tahun_ajaran:string|null}
+   - reset_password: {action:"reset_password", target_user:string|null, new_password:string|null}
    - hapus_akun: {action:"hapus_akun", target_user:string|null}
    - ubah_semester: {action:"ubah_semester", semester:string|null}
-   - atur_tarif_iuran: {action:"atur_tarif_iuran", amount:int}
    - none: {action:"none"}
 
 HANYA kembalikan 1 string JSON murni tanpa markdown, tanpa pengantar, tanpa penjelasan di luar JSON.
@@ -1404,7 +1973,7 @@ PROMPT;
             ['role' => 'user', 'content' => $message],
         ];
 
-        $resp = $this->callAiWithFallback($messages, 0.0, 250);
+        $resp = $this->callAiWithFallback($messages, 0.0, 280);
         if ($resp['success']) {
             $raw = $resp['reply'];
             if (preg_match('/\{.*\}/s', $raw, $m)) {
@@ -1419,7 +1988,7 @@ PROMPT;
     }
 
     /**
-     * Eksekusi aksi yang diekstrak oleh AI Reasoner dengan validasi otorisasi dan data
+     * Eksekusi aksi yang sudah terkonfirmasi dengan verifikasi ulang otorisasi RBAC & validasi data
      */
     private function executeParsedAction(array $actionData, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, string $rawMessage = '')
     {
@@ -1432,130 +2001,132 @@ PROMPT;
         }
 
         $action = $actionData['action'] ?? 'none';
-        $userRole = $user->role;
+        if ($action === 'none') {
+            return null;
+        }
+
+        // Defense-in-depth: cek ulang RBAC tepat sebelum eksekusi database
+        $authError = $this->authorizeCrudAction($action, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel);
+        if ($authError !== null) {
+            return $authError;
+        }
 
         switch ($action) {
             case 'atur_tarif_iuran':
             case 'set_tarif_iuran':
-                if ($userRole !== 'bendahara') {
-                    return "❌ AKSES DITOLAK: Anda login sebagai **{$userRoleLabel}**. Pengaturan tarif iuran mingguan **hanya berhak dilakukan oleh Bendahara Kelas** ({$bendaharaName}).";
-                }
                 $amount = (int) ($actionData['amount'] ?? 0);
-                if ($amount < 500) {
-                    return "❌ GAGAL: Nominal tarif iuran minimal Rp 500. Anda memasukkan: " . $amount;
+                if ($amount < 500 || $amount > 1000000) {
+                    return "❌ GAGAL: Nominal tarif iuran harus antara Rp 500 hingga Rp 1.000.000.";
                 }
+                $oldRate = AcademicService::getDuesRatePerWeek();
                 AcademicService::setDuesRatePerWeek($amount);
+                AuditLog::record(
+                    'atur_tarif',
+                    "Mengubah tarif iuran kas mingguan dari Rp " . number_format($oldRate, 0, ',', '.') . " menjadi Rp " . number_format($amount, 0, ',', '.') . " via AI Chatbot",
+                    $user,
+                    'chatbot',
+                    ['old_rate' => $oldRate, 'new_rate' => $amount]
+                );
                 return "✅ BERHASIL: Tarif iuran kas mingguan berhasil diubah menjadi **Rp " . number_format($amount, 0, ',', '.') . " / minggu** oleh Bendahara ({$user->name})!\n"
-                    . "- Seluruh kalkulasi tagihan kas, matriks buku kas, dan tunggakan mahasiswa kini otomatis tersinkronisasi ke tarif baru ini.";
+                    . "- Tarif sebelumnya: Rp " . number_format($oldRate, 0, ',', '.') . " / minggu\n"
+                    . "- Seluruh kalkulasi tagihan kas, matriks buku kas, dan tunggakan mahasiswa kini otomatis tersinkronisasi.";
+
+            case 'bayar_iuran':
+                return $this->actionBayarIuran($user, $actionData);
 
             case 'catat_pemasukan':
-                if (!in_array($userRole, ['bendahara', 'admin', 'ketua'])) {
-                    return "❌ AKSES DITOLAK: Anda login sebagai **{$userRoleLabel}**. Pencatatan pemasukan kas hanya berhak dilakukan oleh Bendahara Kelas, Super Admin, atau Ketua Kelas.";
-                }
                 $amount = (float) ($actionData['amount'] ?? 0);
                 $desc = (string) ($actionData['description'] ?? 'Pemasukan kas');
                 $student = isset($actionData['student']) ? (string) $actionData['student'] : null;
                 return $this->actionCatatTransaksi($user, 'pemasukan', $amount, $desc, $student, $rawMessage);
 
             case 'catat_pengeluaran':
-                if (!in_array($userRole, ['bendahara', 'admin', 'ketua'])) {
-                    return "❌ AKSES DITOLAK: Anda login sebagai **{$userRoleLabel}**. Pencatatan pengeluaran kas hanya berhak dilakukan oleh Bendahara Kelas, Super Admin, atau Ketua Kelas.";
-                }
                 $amount = (float) ($actionData['amount'] ?? 0);
                 $desc = (string) ($actionData['description'] ?? 'Pengeluaran kas');
                 return $this->actionCatatTransaksi($user, 'pengeluaran', $amount, $desc, null, $rawMessage);
 
             case 'batalkan_iuran':
             case 'hapus_iuran':
-                if ($userRole !== 'bendahara') {
-                    return "❌ AKSES DITOLAK: Anda login sebagai **{$userRoleLabel}**. Pembatalan catatan iuran kas mahasiswa **hanya berhak dilakukan oleh Bendahara Kelas** ({$bendaharaName}).";
-                }
                 return $this->actionBatalkanIuran($user, $actionData);
 
             case 'hapus_transaksi':
-                if ($userRole !== 'bendahara') {
-                    return "❌ AKSES DITOLAK: Anda login sebagai **{$userRoleLabel}**. Penghapusan transaksi kas **hanya berhak dilakukan oleh Bendahara Kelas** ({$bendaharaName}).";
-                }
                 $id = (int) ($actionData['id'] ?? 0);
                 return $this->actionHapusTransaksi($user, $id);
 
             case 'pulihkan_transaksi':
-                if ($userRole !== 'bendahara') {
-                    return "❌ AKSES DITOLAK: Anda login sebagai **{$userRoleLabel}**. Pemulihan transaksi kas terhapus **hanya berhak dilakukan oleh Bendahara Kelas** ({$bendaharaName}).";
-                }
                 $id = (int) ($actionData['id'] ?? 0);
                 return $this->actionPulihkanTransaksi($user, $id);
 
             case 'edit_transaksi':
-                if ($userRole !== 'bendahara') {
-                    return "❌ AKSES DITOLAK: Anda login sebagai **{$userRoleLabel}**. Pengubahan transaksi kas **hanya berhak dilakukan oleh Bendahara Kelas** ({$bendaharaName}).";
-                }
                 $id = (int) ($actionData['id'] ?? 0);
-                $amount = isset($actionData['amount']) ? (string) $actionData['amount'] : null;
+                $amount = isset($actionData['amount']) && $actionData['amount'] !== null && $actionData['amount'] !== '' ? (string) $actionData['amount'] : null;
                 $desc = isset($actionData['description']) ? (string) $actionData['description'] : null;
                 return $this->actionEditTransaksi($user, $id, $amount, $desc);
 
             case 'ubah_role':
-                if (!in_array($userRole, ['admin', 'ketua'])) {
-                    return "❌ AKSES DITOLAK: Anda login sebagai **{$userRoleLabel}**. Pengubahan hak akses role akun hanya berhak dilakukan oleh Super Admin atau Ketua Kelas.";
-                }
-                $target = (string) ($actionData['target_user'] ?? '');
-                $role = (string) ($actionData['new_role'] ?? $actionData['role'] ?? 'mahasiswa');
-                return $this->actionUbahRole($user, $target, $role);
+                $target = (string) ($actionData['target_user_id'] ?? $actionData['target_user'] ?? '');
+                $role = (string) ($actionData['new_role'] ?? $actionData['role'] ?? '');
+                return $this->actionUbahRole($user, $target, $role, $userRoleLabel);
 
             case 'tambah_akun':
-                if (!in_array($userRole, ['admin', 'ketua'])) {
-                    return "❌ AKSES DITOLAK: Anda login sebagai **{$userRoleLabel}**. Penambahan akun pengguna baru hanya berhak dilakukan oleh Super Admin atau Ketua Kelas.";
-                }
-                $name = (string) ($actionData['name'] ?? '');
-                $npm = (string) ($actionData['npm'] ?? '');
-                $role = (string) ($actionData['role'] ?? 'mahasiswa');
-                return $this->actionTambahAkun($user, $name, $npm, $role);
+                return $this->actionTambahAkun(
+                    $user,
+                    (string) ($actionData['name'] ?? ''),
+                    (string) ($actionData['npm'] ?? ''),
+                    (string) ($actionData['role'] ?? 'mahasiswa'),
+                    (string) ($actionData['password'] ?? ''),
+                    (string) ($actionData['semester'] ?? ''),
+                    $userRoleLabel
+                );
+
+            case 'ubah_akademik':
+            case 'edit_akun':
+                return $this->actionUbahAkademik($user, $actionData, $userRoleLabel);
+
+            case 'reset_password':
+                return $this->actionResetPassword($user, $actionData, $userRoleLabel);
 
             case 'hapus_akun':
-                if (!in_array($userRole, ['admin', 'ketua'])) {
-                    return "❌ AKSES DITOLAK: Anda login sebagai **{$userRoleLabel}**. Penghapusan akun pengguna hanya berhak dilakukan oleh Super Admin atau Ketua Kelas.";
-                }
-                $target = (string) ($actionData['target_user'] ?? '');
-                return $this->actionHapusAkun($user, $target);
+                $target = (string) ($actionData['target_user_id'] ?? $actionData['target_user'] ?? '');
+                return $this->actionHapusAkun($user, $target, $userRoleLabel);
 
             case 'ubah_semester':
-                if (!in_array($userRole, ['admin', 'ketua'])) {
-                    return "❌ AKSES DITOLAK: Anda login sebagai **{$userRoleLabel}**. Pengaturan semester kelas hanya berhak dilakukan oleh Super Admin atau Ketua Kelas.";
-                }
                 $sem = (string) ($actionData['semester'] ?? '');
-                return $this->actionSetSemester($sem, $user);
+                return $this->actionSetSemester($sem, $user, $userRoleLabel);
 
             default:
                 return null;
         }
     }
 
-    // Eksekusi aksi Super Admin (role, akun, semester)
-    private function actionUbahRole($user, $targetQuery, $newRoleRaw)
+    // Eksekusi aksi Super Admin & Ketua Kelas (akun, role, akademik, reset sandi, semester)
+    private function actionUbahRole($user, $targetQuery, $newRoleRaw, string $actorRoleLabel = 'Pengurus')
     {
         $roleMap = [
             'admin' => 'admin',
             'super admin' => 'admin',
             'bendahara' => 'bendahara',
             'ketua' => 'ketua',
+            'ketua kelas' => 'ketua',
             'mahasiswa' => 'mahasiswa',
         ];
 
-        $newRole = $roleMap[strtolower($newRoleRaw)] ?? null;
+        $newRole = $roleMap[strtolower(trim((string) $newRoleRaw))] ?? null;
         if (!$newRole) {
             return "❌ GAGAL: Role '{$newRoleRaw}' tidak valid. Pilihan: admin, bendahara, ketua, mahasiswa.";
         }
 
-        $target = User::where('npm', $targetQuery)
-            ->orWhere('name', 'like', "%{$targetQuery}%")
-            ->first();
-
+        $target = $this->findUserByQuery($targetQuery);
         if (!$target) {
             return "❌ GAGAL: Akun pengguna dengan nama atau NPM \"{$targetQuery}\" tidak ditemukan.";
         }
 
-        $oldRoleLabel = $this->getRoleLabel($target->role);
+        if ($target->id === $user->id) {
+            return "❌ GAGAL: Anda tidak dapat mengubah role akun Anda sendiri.";
+        }
+
+        $oldRole = $target->role;
+        $oldRoleLabel = $this->getRoleLabel($oldRole);
         $newRoleLabel = $this->getRoleLabel($newRole);
 
         $target->role = $newRole;
@@ -1566,53 +2137,67 @@ PROMPT;
             "Mengubah peran akun {$target->name} (NPM: {$target->npm}) dari {$oldRoleLabel} menjadi {$newRoleLabel} via AI Chatbot",
             $user,
             'chatbot',
-            ['user_id' => $target->id, 'new_role' => $newRole]
+            ['user_id' => $target->id, 'old_role' => $oldRole, 'new_role' => $newRole]
         );
 
-        return "✅ BERHASIL diubah oleh Super Admin ({$user->name})!\n"
+        return "✅ BERHASIL diubah oleh {$actorRoleLabel} ({$user->name})!\n"
             . "- Pengguna: {$target->name} (NPM: {$target->npm})\n"
             . "- Peran Lama: {$oldRoleLabel}\n"
             . "- Peran Baru: **{$newRoleLabel}**\n"
             . "- Hak akses pengguna ini telah langsung disesuaikan di sistem.";
     }
 
-    private function actionTambahAkun($user, $name, $npm, $roleRaw)
+    private function actionTambahAkun($user, $name, $npm, $roleRaw, string $customPassword = '', string $semesterRaw = '', string $actorRoleLabel = 'Pengurus')
     {
         $roleMap = [
             'admin' => 'admin',
             'super admin' => 'admin',
             'bendahara' => 'bendahara',
             'ketua' => 'ketua',
+            'ketua kelas' => 'ketua',
             'mahasiswa' => 'mahasiswa',
         ];
-        $role = $roleMap[strtolower($roleRaw)] ?? 'mahasiswa';
+        $role = $roleMap[strtolower(trim((string) $roleRaw))] ?? 'mahasiswa';
+        $name = trim((string) $name);
+        $npm = trim((string) $npm);
 
-        if (empty($name) || empty($npm)) {
+        if ($name === '' || $npm === '') {
             return "❌ GAGAL: Nama dan NPM harus diisi.";
         }
-
+        if (strlen($npm) < 3 || strlen($npm) > 30 || preg_match('/\s/', $npm)) {
+            return "❌ GAGAL: Format NPM tidak valid.";
+        }
         if (User::where('npm', $npm)->exists()) {
             return "❌ GAGAL: Akun dengan NPM {$npm} sudah terdaftar di sistem.";
         }
 
-        // Proteksi Duplikasi Akun Berdasarkan Nama Sama Persis
-        $normalizedName = strtolower(trim($name));
+        $normalizedName = strtolower($name);
         $existingNameUser = User::whereRaw('LOWER(TRIM(name)) = ?', [$normalizedName])->first();
         if ($existingNameUser) {
-            return "❌ GAGAL: Mahasiswa dengan nama '{$existingNameUser->name}' sudah terdaftar dalam sistem (NPM: {$existingNameUser->npm}, Role: {$existingNameUser->role}). Untuk menghindari akun ganda, gunakan nama yang berbeda atau berikan inisial pembeda.";
+            return "❌ GAGAL: Mahasiswa dengan nama '{$existingNameUser->name}' sudah terdaftar dalam sistem (NPM: {$existingNameUser->npm}, Role: {$existingNameUser->role}).";
         }
 
-        $activeClassSemester = AcademicService::getActiveSemester();
+        $customPassword = trim($customPassword);
+        if ($customPassword !== '' && strlen($customPassword) < 6) {
+            return "❌ GAGAL: Kata sandi awal minimal 6 karakter.";
+        }
+
+        $targetSemester = AcademicService::getActiveSemester();
+        if ($semesterRaw !== '' && in_array($semesterRaw, AcademicService::SEMESTERS, true)) {
+            $targetSemester = $semesterRaw;
+        }
+
+        $finalPassword = $customPassword !== '' ? $customPassword : $npm;
 
         $newUser = User::create([
-            'name' => ucwords(trim($name)),
-            'npm' => trim($npm),
-            'email' => trim($npm) . '@mail.upstegal.ac.id',
-            'password' => Hash::make(trim($npm)),
+            'name' => ucwords($name),
+            'npm' => $npm,
+            'email' => $npm . '@mail.upstegal.ac.id',
+            'password' => Hash::make($finalPassword),
             'role' => $role,
-            'semester' => $activeClassSemester,
+            'semester' => $targetSemester,
             'status_akademik' => 'Aktif',
-            'tahun_ajaran' => AcademicService::getTahunAjaran($activeClassSemester),
+            'tahun_ajaran' => AcademicService::getTahunAjaran($targetSemester),
         ]);
 
         AuditLog::record(
@@ -1620,23 +2205,113 @@ PROMPT;
             "Mendaftarkan akun baru {$newUser->name} (NPM: {$newUser->npm}) role {$role} via AI Chatbot",
             $user,
             'chatbot',
-            ['user_id' => $newUser->id, 'npm' => $newUser->npm, 'role' => $role, 'semester' => $activeClassSemester]
+            ['user_id' => $newUser->id, 'npm' => $newUser->npm, 'role' => $role, 'semester' => $targetSemester]
         );
 
-        return "✅ BERHASIL ditambahkan oleh Super Admin ({$user->name})!\n"
-            . "- Nama: {$newUser->name}\n"
-            . "- NPM: {$newUser->npm}\n"
+        $pwInfo = $customPassword !== '' ? 'Kata sandi kustom (tersimpan terenkripsi)' : 'Default mengikuti NPM';
+
+        return "✅ BERHASIL ditambahkan oleh {$actorRoleLabel} ({$user->name})!\n"
+            . "- Nama: **{$newUser->name}**\n"
+            . "- NPM: `{$newUser->npm}`\n"
             . "- Role: **" . $this->getRoleLabel($role) . "**\n"
-            . "- Semester: {$activeClassSemester}\n"
-            . "- Password Default: [NPM]";
+            . "- Semester: {$targetSemester}\n"
+            . "- Password Awal: {$pwInfo}";
     }
 
-    private function actionHapusAkun($user, $targetQuery)
+    private function actionUbahAkademik($user, array $actionData, string $actorRoleLabel = 'Pengurus')
     {
-        $target = User::where('npm', $targetQuery)
-            ->orWhere('id', $targetQuery)
-            ->orWhere('name', 'like', "%{$targetQuery}%")
-            ->first();
+        $targetId = (int) ($actionData['target_user_id'] ?? 0);
+        $target = $targetId > 0 ? User::find($targetId) : $this->findUserByQuery((string) ($actionData['target_user'] ?? ''));
+
+        if (!$target) {
+            return "❌ GAGAL: Akun pengguna tidak ditemukan.";
+        }
+
+        $updates = is_array($actionData['updates'] ?? null) ? $actionData['updates'] : [];
+        if (empty($updates)) {
+            return "ℹ️ Tidak ada perubahan data akademik yang diterapkan.";
+        }
+
+        if (isset($updates['name'])) {
+            $dup = User::where('id', '!=', $target->id)->whereRaw('LOWER(TRIM(name)) = ?', [strtolower($updates['name'])])->first();
+            if ($dup) {
+                return "❌ GAGAL: Nama '{$updates['name']}' sudah digunakan oleh akun lain (NPM: {$dup->npm}).";
+            }
+        }
+
+        $before = [
+            'name' => $target->name,
+            'semester' => $target->semester,
+            'status_akademik' => $target->status_akademik,
+            'tahun_ajaran' => $target->tahun_ajaran,
+        ];
+
+        $target->update($updates);
+
+        $after = [
+            'name' => $target->name,
+            'semester' => $target->semester,
+            'status_akademik' => $target->status_akademik,
+            'tahun_ajaran' => $target->tahun_ajaran,
+        ];
+
+        $summaryParts = [];
+        foreach ($updates as $field => $val) {
+            $summaryParts[] = ucfirst(str_replace('_', ' ', $field)) . ": {$val}";
+        }
+
+        AuditLog::record(
+            'ubah_akademik',
+            "Memperbarui data/akademik {$target->name} (NPM: {$target->npm}) [" . implode(', ', $summaryParts) . "] via AI Chatbot",
+            $user,
+            'chatbot',
+            ['user_id' => $target->id, 'before' => $before, 'after' => $after]
+        );
+
+        return "✅ BERHASIL diperbarui oleh {$actorRoleLabel} ({$user->name})!\n"
+            . "- Pengguna: **{$target->name}** (NPM: {$target->npm})\n"
+            . "- Perubahan: **" . implode(' | ', $summaryParts) . "**\n"
+            . "- Seluruh data pengguna telah langsung tersinkronisasi di sistem.";
+    }
+
+    private function actionResetPassword($user, array $actionData, string $actorRoleLabel = 'Pengurus')
+    {
+        $targetId = (int) ($actionData['target_user_id'] ?? 0);
+        $target = $targetId > 0 ? User::find($targetId) : $this->findUserByQuery((string) ($actionData['target_user'] ?? ''));
+
+        if (!$target) {
+            return "❌ GAGAL: Akun pengguna tidak ditemukan.";
+        }
+        if ($target->id === $user->id) {
+            return "❌ GAGAL: Pengubahan kata sandi akun sendiri harus melalui tombol Pengaturan Sandi di sidebar.";
+        }
+
+        $newPassword = trim((string) ($actionData['new_password'] ?? ''));
+        if (strlen($newPassword) < 6) {
+            return "❌ GAGAL: Kata sandi baru minimal 6 karakter.";
+        }
+
+        $target->update([
+            'password' => Hash::make($newPassword),
+        ]);
+
+        AuditLog::record(
+            'reset_password',
+            "Mereset kata sandi akun {$target->name} (NPM: {$target->npm}) via AI Chatbot",
+            $user,
+            'chatbot',
+            ['user_id' => $target->id, 'npm' => $target->npm]
+        );
+
+        return "✅ BERHASIL disetel ulang oleh {$actorRoleLabel} ({$user->name})!\n"
+            . "- Pengguna: **{$target->name}** (NPM: {$target->npm})\n"
+            . "- Status: Kata sandi baru telah disimpan secara terenkripsi (*Bcrypt*).\n"
+            . "- Sampaikan kata sandi baru tersebut secara pribadi kepada yang bersangkutan.";
+    }
+
+    private function actionHapusAkun($user, $targetQuery, string $actorRoleLabel = 'Pengurus')
+    {
+        $target = $this->findUserByQuery($targetQuery);
 
         if (!$target) {
             return "❌ GAGAL: Akun \"{$targetQuery}\" tidak ditemukan.";
@@ -1647,9 +2322,11 @@ PROMPT;
         }
 
         $targetInfo = "{$target->name} (NPM: {$target->npm}, Role: " . $this->getRoleLabel($target->role) . ")";
-        
-        DuesPayment::where('user_id', $target->id)->delete();
-        $target->delete();
+
+        DB::transaction(function () use ($target) {
+            DuesPayment::where('user_id', $target->id)->delete();
+            $target->delete();
+        });
 
         AuditLog::record(
             'hapus_akun',
@@ -1659,10 +2336,10 @@ PROMPT;
             ['npm' => $target->npm, 'name' => $target->name, 'role' => $target->role]
         );
 
-        return "✅ BERHASIL dihapus oleh Super Admin ({$user->name})!\n- Akun dihapus: **{$targetInfo}**";
+        return "✅ BERHASIL dihapus oleh {$actorRoleLabel} ({$user->name})!\n- Akun dihapus: **{$targetInfo}**";
     }
 
-    private function actionSetSemester($targetSemesterRaw, $user)
+    private function actionSetSemester($targetSemesterRaw, $user, string $actorRoleLabel = 'Pengurus')
     {
         if (preg_match('/(\d+)/', (string) $targetSemesterRaw, $m)) {
             $targetSemester = "Semester " . $m[1];
@@ -1670,12 +2347,13 @@ PROMPT;
             $targetSemester = ucwords(strtolower(trim((string) $targetSemesterRaw)));
         }
 
-        if (!in_array($targetSemester, AcademicService::SEMESTERS)) {
+        if (!in_array($targetSemester, AcademicService::SEMESTERS, true)) {
             return "❌ GAGAL: Pilihan semester tidak valid. Pilihan: " . implode(', ', AcademicService::SEMESTERS);
         }
 
         AcademicService::setActiveSemester($targetSemester);
         User::where('role', 'admin')->update(['semester' => $targetSemester]);
+        User::where('status_akademik', 'Aktif')->update(['semester' => $targetSemester]);
         session(['selected_semester' => $targetSemester]);
 
         $kelasLabel = AcademicService::getKelasLabel($targetSemester);
@@ -1688,11 +2366,111 @@ PROMPT;
             ['semester' => $targetSemester]
         );
 
-        return "✅ BERHASIL: Semester aktif kelas berhasil diubah ke **{$targetSemester}** (Kelas {$kelasLabel}) oleh Super Admin ({$user->name}).\n"
-            . "- Data pembukuan kas kelas otomatis beralih ke periode semester ini.";
+        return "✅ BERHASIL: Semester aktif kelas berhasil diubah ke **{$targetSemester}** (Kelas {$kelasLabel}) oleh {$actorRoleLabel} ({$user->name}).\n"
+            . "- Seluruh mahasiswa aktif & data pembukuan kas kelas otomatis beralih ke periode semester ini.";
     }
 
-    // Eksekusi aksi Bendahara (mutasi kas, tarif, iuran)
+    // Eksekusi aksi Bendahara (bayar iuran mingguan, mutasi kas, tarif, pembatalan, backup/restore)
+    private function actionBayarIuran($user, array $actionData)
+    {
+        $studentId = (int) ($actionData['student_id'] ?? 0);
+        $targetStudent = $studentId > 0 ? User::find($studentId) : $this->findUserByQuery((string) ($actionData['student'] ?? ''));
+
+        if (!$targetStudent) {
+            return "❌ GAGAL: Mahasiswa tidak ditemukan.";
+        }
+
+        $activeClassSemester = AcademicService::getActiveSemester();
+        $targetMonth = (int) ($actionData['month'] ?? now()->month);
+        $targetYear = (int) ($actionData['year'] ?? now()->year);
+        $rate = (int) ($actionData['rate'] ?? AcademicService::getDuesRatePerWeek());
+        $requestedWeeks = is_array($actionData['weeks'] ?? null) ? $actionData['weeks'] : [];
+
+        // Re-validasi minggu yang masih belum lunas tepat sebelum eksekusi
+        $alreadyPaid = DuesPayment::where('user_id', $targetStudent->id)
+            ->where('semester', $activeClassSemester)
+            ->where('month', $targetMonth)
+            ->where('year', $targetYear)
+            ->where('status', 'lunas')
+            ->pluck('week_number')
+            ->map(function ($w) { return (int) $w; })
+            ->toArray();
+
+        $weeksToPay = array_values(array_diff(array_map('intval', $requestedWeeks), $alreadyPaid));
+        sort($weeksToPay);
+
+        if (empty($weeksToPay)) {
+            return "ℹ️ Semua minggu yang dipilih untuk **{$targetStudent->name}** sudah berstatus **Lunas**. Tidak ada pembayaran ganda yang dicatat.";
+        }
+
+        $totalAmount = count($weeksToPay) * $rate;
+        $namaBulan = AcademicService::getNamaBulan($targetMonth);
+        $weeksLabel = implode(', ', array_map(function ($w) { return "Mg {$w}"; }, $weeksToPay));
+        $description = "[Via AI] Iuran Kas: {$targetStudent->name} ({$weeksLabel} Bln {$targetMonth}/{$targetYear} - {$activeClassSemester})";
+
+        $transaction = null;
+        DB::transaction(function () use (
+            &$transaction,
+            $targetStudent,
+            $totalAmount,
+            $description,
+            $activeClassSemester,
+            $weeksToPay,
+            $targetMonth,
+            $targetYear
+        ) {
+            $transaction = KasTransaction::create([
+                'user_id' => $targetStudent->id,
+                'type' => 'pemasukan',
+                'amount' => $totalAmount,
+                'date' => Carbon::today()->format('Y-m-d'),
+                'description' => $description,
+                'semester' => $activeClassSemester,
+                'tahun_ajaran' => AcademicService::getTahunAjaran($activeClassSemester),
+            ]);
+
+            foreach ($weeksToPay as $wk) {
+                DuesPayment::updateOrCreate(
+                    [
+                        'user_id' => $targetStudent->id,
+                        'week_number' => $wk,
+                        'month' => $targetMonth,
+                        'year' => $targetYear,
+                        'semester' => $activeClassSemester,
+                    ],
+                    [
+                        'kas_transaction_id' => $transaction->id,
+                        'status' => 'lunas',
+                    ]
+                );
+            }
+        });
+
+        AuditLog::record(
+            'bayar_iuran',
+            "Mencatat pembayaran iuran {$targetStudent->name} (NPM: {$targetStudent->npm}) {$weeksLabel} {$namaBulan} {$targetYear} sebesar Rp " . number_format($totalAmount, 0, ',', '.') . " via AI Chatbot",
+            $user,
+            'chatbot',
+            [
+                'transaction_id' => $transaction ? $transaction->id : null,
+                'student_id' => $targetStudent->id,
+                'weeks' => $weeksToPay,
+                'amount' => $totalAmount,
+                'semester' => $activeClassSemester,
+            ]
+        );
+
+        $newIn = KasTransaction::where('semester', $activeClassSemester)->where('type', 'pemasukan')->sum('amount');
+        $newOut = KasTransaction::where('semester', $activeClassSemester)->where('type', 'pengeluaran')->sum('amount');
+        $newSaldo = $newIn - $newOut;
+
+        return "✅ BERHASIL dicatat oleh Bendahara ({$user->name})!\n"
+            . "- Transaksi: **#{$transaction->id}** | Pemasukan Iuran: **Rp " . number_format($totalAmount, 0, ',', '.') . "**\n"
+            . "- Mahasiswa: **{$targetStudent->name}** (NPM: {$targetStudent->npm})\n"
+            . "- Status Lunas: **Minggu ke-" . implode(', ', $weeksToPay) . "** ({$namaBulan} {$targetYear} - {$activeClassSemester})\n"
+            . "- Saldo Kas Aktif Sekarang: **Rp " . number_format($newSaldo, 0, ',', '.') . "**\n"
+            . "- Matriks Buku Kas, Arsip, dan Dashboard langsung tersinkronisasi.";
+    }
     private function actionCatatTransaksi($user, $type, $amountStr, $description, $studentParam = null, $rawMessage = '')
     {
         $amount = (float) str_replace(['.', ','], ['', '.'], (string) $amountStr);
@@ -2012,6 +2790,17 @@ PROMPT;
         }
 
         $activeClassSemester = AcademicService::getActiveSemester();
+        if (AcademicService::isHistoricalArchive($tx->semester, $activeClassSemester)) {
+            return "🔒 GAGAL: Transaksi #{$tx->id} termasuk arsip historis ({$tx->semester}) yang bersifat read-only dan tidak dapat dihapus.";
+        }
+
+        if ($tx->type === 'pemasukan') {
+            $semIn = KasTransaction::where('semester', $tx->semester)->where('type', 'pemasukan')->sum('amount');
+            $semOut = KasTransaction::where('semester', $tx->semester)->where('type', 'pengeluaran')->sum('amount');
+            if (($semIn - $tx->amount) < $semOut) {
+                return "❌ GAGAL: Menghapus pemasukan #{$tx->id} akan membuat saldo {$tx->semester} menjadi minus.";
+            }
+        }
 
         // Rekam snapshot lengkap sebelum soft-delete (foto bukti tetap dipertahankan untuk pemulihan)
         $relatedDues = DuesPayment::where('kas_transaction_id', $tx->id)->get()->map(function ($d) {
@@ -2188,6 +2977,11 @@ PROMPT;
 
         if (!$tx) {
             return "⚠️ GAGAL: Transaksi kas dengan ID #" . ($txId ?: 'terbaru') . " tidak ditemukan.";
+        }
+
+        $activeClassSemester = AcademicService::getActiveSemester();
+        if (AcademicService::isHistoricalArchive($tx->semester, $activeClassSemester)) {
+            return "🔒 GAGAL: Transaksi #{$tx->id} termasuk arsip historis ({$tx->semester}) yang bersifat read-only dan tidak dapat diubah.";
         }
 
         // Rekam snapshot data lama (before) sebagai backup audit sebelum diubah
@@ -2505,24 +3299,27 @@ Jika pengguna meminta suatu aksi (mencatat, mengedit, atau menghapus transaksi k
 - JANGAN langsung mengeksekusi secara sembarangan atau memberikan pesan error kaku.
 - TANYAKAN SECARA DETAIL atribut-atribut apa saja yang harus dicantumkan (seperti nominal, keterangan transaksi, atau pilihan semester), dan berikan contoh perintah yang jelas.
 
-## HAK AKSES PERAN & KEMAMPUAN CRUD LENGKAP:
-AI SUDAH BISA melakukan CRUD data (Menambah, Mengedit, Menghapus) secara langsung sesuai hak akses masing-masing role:
-1. Super Admin & Ketua Kelas:
-   - Tambah Akun: `tambah akun [nama] npm [npm] role [role]`
-   - Edit Role Akun: `ubah role [nama/npm] jadi [admin/bendahara/ketua/mahasiswa]`
-   - Hapus Akun: `hapus akun [nama/npm]`
-   - Ubah Semester: `ubah semester aktif ke [Semester X]`
-   - Memiliki hak akses penuh manajemen akun, semester, dan direktori mahasiswa.
-2. Bendahara Kelas:
-   - Tambah Transaksi: `catat pemasukan [nominal] [ket]` & `catat pengeluaran [nominal] [ket]`
-   - Edit Transaksi: `edit transaksi #[id] nominal [angka]` & `edit transaksi #[id] keterangan [teks]`
-   - Hapus Transaksi: `hapus transaksi #[id]`
-   - Lihat Backup Terhapus & Pulihkan: `lihat transaksi terhapus` & `pulihkan transaksi #[id]`
-   - Atur Tarif Iuran Kas: `ubah tarif kas jadi [nominal]` / `atur iuran mingguan [nominal]`
-   - Batalkan Iuran: `batalkan iuran [nama] minggu [ke-X]`
+## HAK AKSES PERAN & KEMAMPUAN CRUD LENGKAP (WAJIB VALIDASI & KONFIRMASI):
+AI SUDAH BISA melakukan CRUD data (Create, Read, Update, Delete) secara langsung sesuai hak akses masing-masing role. Setiap aksi mutasi WAJIB melewati validasi data & konfirmasi pengguna (Ya / Batal) sebelum dieksekusi:
+1. Super Admin & Ketua Kelas (CRUD Akun & Semester):
+   - Create Akun: `tambah akun [nama] npm [npm] role [mahasiswa/bendahara/ketua/admin]` (opsional `password [min 6 char]`)
+   - Read Akun & Kas: lihat seluruh daftar akun, role, status akademik, saldo, tunggakan, rekap Excel, jejak audit (kas bersifat read-only)
+   - Update Role: `ubah role [nama/npm] jadi [admin/bendahara/ketua/mahasiswa]`
+   - Update Data & Status Akademik: `ubah status akademik [nama/npm] jadi [Aktif / Lulus / Alumni]`, `ubah semester [nama/npm] jadi [Semester X]`, `edit akun [nama/npm] nama jadi [Nama Baru]`
+   - Reset Password Akun Lain: `reset password [nama/npm] jadi [sandi baru min 6 char]`
+   - Update Semester Aktif Kelas: `ubah semester aktif ke [Semester X]`
+   - Delete Akun: `hapus akun [nama/npm]` (tidak dapat menghapus akun sendiri)
+2. Bendahara Kelas (CRUD Kas, Iuran & Backup):
+   - Create Pemasukan/Pengeluaran: `catat pemasukan [nominal] [ket]` & `catat pengeluaran [nominal] [ket]`
+   - Create Pembayaran Iuran Mingguan: `bayar iuran [nama/npm] minggu [1/2/3/4]` atau `lunaskan iuran [nama/npm]`
+   - Read Kas & Backup: lihat saldo, mutasi, tunggakan, rekap Excel, jejak audit, `lihat transaksi terhapus`
+   - Update Transaksi: `edit transaksi #[id] nominal [angka]` & `edit transaksi #[id] keterangan [teks]`
+   - Update Tarif Iuran: `ubah tarif kas jadi [nominal]`
+   - Restore Backup Terhapus: `pulihkan transaksi #[id]`
+   - Delete Transaksi (Soft Delete) & Batalkan Iuran: `hapus transaksi #[id]` & `batalkan iuran [nama/npm] minggu [ke-X]`
    - Dilarang kelola akun atau semester.
-3. Mahasiswa:
-   - Read-Only (hanya membaca data). Dilarang menambah, mengedit, atau menghapus data keuangan atau akun.
+3. Mahasiswa (Read-Only):
+   - Hanya membaca data (cek tunggakan pribadi, saldo, tarif, pengurus, rekap Excel, simulasi anggaran). Dilarang Create/Update/Delete data keuangan maupun akun.
 *Jika user meminta aksi di luar hak perannya, TOLAK SECARA LANGSUNG, TEGAS, DAN SINGKAT.*
 
 ## DATA SINKRONISASI REAL-TIME KELAS & BUKU KAS:

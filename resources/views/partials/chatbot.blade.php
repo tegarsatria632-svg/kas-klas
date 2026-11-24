@@ -1273,17 +1273,17 @@
         wrapper.className = 'chatbot-msg chatbot-msg-ai';
 
         let confirmHtml = '';
-        if (isConfirmation || (text && text.includes('Konfirmasi') && text.includes('Ketik **Ya**'))) {
+        if (isConfirmation) {
             confirmHtml = `
-                <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
-                    <button type="button" onclick="sendQuickMessage('Ya, konfirmasi')" 
+                <div class="chatbot-confirm-actions" style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button type="button" onclick="handleConfirmationAction(this, 'Ya, konfirmasi')" 
                             style="background:#10b981; color:#fff; border:none; padding:6px 12px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px; box-shadow:0 2px 6px rgba(16,185,129,0.3); transition:all 0.2s;"
-                            onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10b981'">
+                            onmouseover="if(!this.disabled)this.style.background='#059669'" onmouseout="if(!this.disabled)this.style.background='#10b981'">
                         ✓ Ya, Konfirmasi
                     </button>
-                    <button type="button" onclick="sendQuickMessage('Batal')" 
+                    <button type="button" onclick="handleConfirmationAction(this, 'Batal')" 
                             style="background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; padding:6px 12px; border-radius:8px; font-size:11.5px; font-weight:600; cursor:pointer; transition:all 0.2s;"
-                            onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
+                            onmouseover="if(!this.disabled)this.style.background='#e2e8f0'" onmouseout="if(!this.disabled)this.style.background='#f1f5f9'">
                         ✕ Batal
                     </button>
                 </div>
@@ -1525,6 +1525,24 @@
         return html.trim();
     }
 
+    function disableActiveConfirmButtons() {
+        document.querySelectorAll('.chatbot-confirm-actions button').forEach(btn => {
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+            btn.style.cursor = 'not-allowed';
+        });
+        if (Array.isArray(chatMessagesHistory) && chatMessagesHistory.length > 0) {
+            chatMessagesHistory.forEach(m => { if (m && m.isConfirmation) m.isConfirmation = false; });
+            saveChatHistoryToStorage();
+        }
+    }
+
+    function handleConfirmationAction(btn, commandText) {
+        if (btn && btn.disabled) return;
+        disableActiveConfirmButtons();
+        sendQuickMessage(commandText);
+    }
+
     async function sendChatMessage() {
         if (chatbotIsSending) return;
 
@@ -1533,6 +1551,7 @@
 
         if (!message) return;
 
+        disableActiveConfirmButtons();
         input.value = '';
 
         chatbotIsSending = true;
