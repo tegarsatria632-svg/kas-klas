@@ -44,4 +44,4 @@ ENV PORT=80 \
 
 USER www-data
 
-CMD ["frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile"]
+CMD ["sh", "-c", "cd /app && php artisan optimize:clear && php artisan package:discover --ansi && php artisan view:cache && exec frankenphp run --config /etc/frankenphp/Caddyfile"]
