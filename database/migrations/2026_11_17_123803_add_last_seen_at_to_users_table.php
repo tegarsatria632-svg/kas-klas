@@ -13,9 +13,11 @@ class AddLastSeenAtToUsersTable extends Migration
      */
     public function up()
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->timestamp('last_seen_at')->nullable()->after('status_akademik');
-        });
+        if (!Schema::hasColumn('users', 'last_seen_at')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->timestamp('last_seen_at')->nullable()->after('status_akademik');
+            });
+        }
     }
 
     /**
