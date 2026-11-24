@@ -23,7 +23,10 @@ RUN mkdir -p \
         storage/framework/sessions \
         storage/framework/views \
         bootstrap/cache \
-    && composer dump-autoload --no-dev --classmap-authoritative --no-scripts
+    && composer dump-autoload --no-dev --classmap-authoritative \
+    && php artisan optimize:clear \
+    && php artisan package:discover --ansi \
+    && php artisan view:cache
 
 FROM base AS runtime
 
