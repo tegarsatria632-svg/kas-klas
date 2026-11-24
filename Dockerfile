@@ -45,4 +45,4 @@ ENV PORT=80 \
 
 USER www-data
 
-CMD ["sh", "-c", "cd /app && rm -f bootstrap/cache/packages.php bootstrap/cache/services.php && php artisan package:discover --ansi && exec frankenphp run --config /etc/frankenphp/Caddyfile"]
+CMD ["sh", "-c", "cd /app && rm -f bootstrap/cache/packages.php bootstrap/cache/services.php && exec frankenphp run --config /etc/frankenphp/Caddyfile"]
