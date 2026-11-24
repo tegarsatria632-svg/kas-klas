@@ -334,12 +334,11 @@ class KasController extends Controller
         }
 
         $totalAmount = count($weeks) * $validated['amount_per_week'];
+        $weeksLabel = implode(', ', array_map(function ($w) {
+            return 'Mg ' . $w;
+        }, $weeks));
 
-        DB::transaction(function () use ($student, $weeks, $totalAmount, $validated) {
-            $weeksLabel = implode(', ', array_map(function ($w) {
-                return 'Mg ' . $w;
-            }, $weeks));
-
+        DB::transaction(function () use ($student, $weeks, $weeksLabel, $totalAmount, $validated) {
             $transaction = KasTransaction::create([
                 'user_id' => $student->id,
                 'type' => 'pemasukan',

@@ -1594,11 +1594,16 @@
                 } catch (retryErr) {}
             }
 
-            const data = await response.json();
+            let data = null;
+            try {
+                data = await response.json();
+            } catch (parseErr) {
+                data = { success: false, reply: 'Maaf, server mengembalikan respons yang tidak valid. Silakan coba lagi.' };
+            }
             removeTypingIndicator();
 
             // Penanganan Khusus Status Blokir Sementara (Batas 3x Toxic/Vulgar)
-            if (data.is_blocked) {
+            if (data && data.is_blocked) {
                 addAiMessage(data.reply);
                 const chatInput = document.getElementById('chatbot-input');
                 const sendBtn = document.getElementById('chatbot-send-btn');
@@ -1617,7 +1622,7 @@
                 return;
             }
 
-            if (data.success) {
+            if (response.ok && data && data.success) {
                 addAiMessage(data.reply, data.is_confirmation);
 
                 // SINKRONISASI REAL-TIME: Jika aksi CRUD berhasil dieksekusi,
@@ -1627,10 +1632,15 @@
                     sessionStorage.setItem('chatbot_keep_open_after_sync', 'true');
                     setTimeout(() => {
                         window.location.reload();
-                    }, 1800);
+                    }, 1200);
                 }
             } else {
-                addAiMessage(data.reply || 'Maaf, terjadi kesalahan. Silakan coba lagi.');
+                const errMsg = (data && data.reply)
+                    ? data.reply
+                    : (response.status >= 500
+                        ? '⚠️ Terjadi gangguan sementara saat memproses aksi di server. Silakan coba kirim ulang perintah Anda.'
+                        : 'Maaf, terjadi kesalahan. Silakan coba lagi.');
+                addAiMessage(errMsg);
             }
         } catch (error) {
             removeTypingIndicator();

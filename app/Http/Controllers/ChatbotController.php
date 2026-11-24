@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 class ChatbotController extends Controller
@@ -111,7 +112,24 @@ class ChatbotController extends Controller
         }
 
         // 2. Deteksi dan Eksekusi Aksi CRUD dengan Sistem Konfirmasi Ketat
-        $actionResult = $this->detectAndExecuteAction($userMessage, $user);
+        try {
+            $actionResult = $this->detectAndExecuteAction($userMessage, $user);
+        } catch (\Throwable $e) {
+            Log::error('Chatbot CRUD error: ' . $e->getMessage(), [
+                'exception' => get_class($e),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'user_id' => $user->id,
+                'user_role' => $user->role,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'reply' => '⚠️ Terjadi kendala teknis saat memproses aksi di database. Perubahan dibatalkan agar data tetap aman. Silakan coba kirim ulang perintah Anda.',
+                'action_executed' => false,
+                'is_confirmation' => false,
+            ], 500);
+        }
         
         if ($actionResult !== null) {
             $replyText = is_array($actionResult) ? ($actionResult['reply'] ?? '') : (string) $actionResult;
@@ -528,7 +546,7 @@ class ChatbotController extends Controller
         ];
 
         foreach ($severeWords as $sw) {
-            if (str_contains($normalized, $sw) || str_contains($collapsed, $sw)) {
+            if (strpos($normalized, $sw) !== false || strpos($collapsed, $sw) !== false) {
                 return $sw;
             }
         }
@@ -538,7 +556,7 @@ class ChatbotController extends Controller
             'pala bapak', 'mati lu', 'bego lu', 'tolol lu', 'goblok lu', 'tai lu', 'bacot lu', 'dasar anjing', 'dasar babi'
         ];
         foreach ($toxicPhrases as $phrase) {
-            if (str_contains($clean, $phrase)) {
+            if (strpos($clean, $phrase) !== false) {
                 return $phrase;
             }
         }
@@ -654,9 +672,21 @@ class ChatbotController extends Controller
             return null; // Teruskan ke AI Q&A normal
         }
 
+        $history = session('chatbot_history', []);
+        $hasFollowUpCrudContext = false;
+        if (!empty($history)) {
+            $lastTurn = end($history);
+            if (($lastTurn['role'] ?? '') === 'assistant') {
+                $lastReplyLower = strtolower((string) ($lastTurn['content'] ?? ''));
+                if (preg_match('/(?:mohon lengkapi|mohon sebutkan|mohon cantumkan|contoh perintah:|minggu ke berapa|belum membayar iuran|ingin mencatat|silakan sebutkan)/i', $lastReplyLower)) {
+                    $hasFollowUpCrudContext = true;
+                }
+            }
+        }
+
         // Filter intensi aksi mutasi kas atau akun
-        $actionTriggerWords = '/\b(?:catat|tambah|tambahkan|tambahin|input|masukkan|masukin|keluar|pengeluaran|pemasukan|kurang|edit|ubah|ganti|perbarui|update|hapus|delete|hilangkan|jadikan|tetapkan|daftarkan|buat|set|setel|reset|beli|biaya|bayar|lunaskan|lunas|batal|batalkan|batalin|cancel|pulihkan|pulih|restore|kembalikan|luluskan|alumni|aktifkan|nonaktifkan)\b/i';
-        if (!preg_match($actionTriggerWords, $msg)) {
+        $actionTriggerWords = '/\b(?:catat|catatkan|tambah|tambahkan|tambahin|input|masukkan|masukin|keluar|pengeluaran|pemasukan|kurang|edit|ubah|ganti|perbarui|perbaharui|update|hapus|delete|hilangkan|jadikan|tetapkan|daftarkan|buat|set|setel|reset|beli|biaya|bayar|membayar|bayarkan|lunaskan|melunasi|lunasin|lunas|setor|setoran|isikan|isi\s+kan|batal|batalkan|batalin|cancel|pulihkan|pulih|restore|kembalikan|luluskan|alumni|aktifkan|nonaktifkan)\b/i';
+        if (!$hasFollowUpCrudContext && !preg_match($actionTriggerWords, $msg)) {
             return null; // Bukan perintah mutasi, teruskan ke Q&A normal
         }
 
@@ -692,25 +722,46 @@ class ChatbotController extends Controller
             }
         }
 
-        // A2. Deteksi Pembayaran Iuran Mingguan Mahasiswa (contoh: "bayar iuran Budi minggu 1 dan 2", "lunaskan iuran Budi", "bayar iuran")
-        if (preg_match('/^(?:tolong\s+|coba\s+)?(?:bayar|bayarkan|lunaskan|lunasin|tandai\s+lunas)\s+(?:iuran|uang\s+kas|kas(?:\s+mingguan)?)(?:\s+(?:untuk|atas\s+nama|si|mahasiswa))?\s*(.*)$/i', $msg, $mPay)) {
-            $rest = trim($mPay[1] ?? '');
-            $payAll = (bool) preg_match('/\b(?:lunaskan|lunasin|semua|penuh|full|sebulan|4\s*minggu)\b/i', $msg);
-            $weeks = $this->extractWeeksFromText($rest);
+        // A2. Deteksi Pembayaran Iuran Mingguan Mahasiswa (1 atau banyak mahasiswa, kalimat bebas)
+        // Contoh: "bayar iuran Budi minggu 1 dan 2", "lunaskan iuran Tegar dan Gilang", "tegar dan gilang membayar kas selama 4 minggu tolong catat"
+        $isDirectBayarCmd = (bool) preg_match('/^(?:tolong\s+|coba\s+)?(?:bayar|bayarkan|lunaskan|melunasi|lunasin|tandai\s+lunas|catat\s+(?:pembayaran\s+)?iuran)\s+(?:iuran|uang\s+kas|kas(?:\s+mingguan)?)(?:\s+(?:untuk|atas\s+nama|si|mahasiswa))?\s*(.*)$/i', $msg, $mPay);
+        $isNaturalDuesPay = !$isDirectBayarCmd
+            && !preg_match('/\b(?:hapus|batalkan|batal|hilangkan|cancel|edit|ubah\s+tarif|atur\s+tarif|pengeluaran)\b/i', $msg)
+            && preg_match('/\b(?:bayar|membayar|bayarkan|lunaskan|melunasi|lunasin|setor|setoran|iuran)\b/i', $msg)
+            && preg_match('/\b(?:kas|iuran|minggu|mg|sebulan|lunas|lunaskan)\b/i', $msg);
 
-            $cleanedTarget = preg_replace('/(?:minggu|mg)(?:\s*ke)?\s*[\d,\s\-dan&]+/i', '', $rest);
-            $cleanedTarget = preg_replace('/\b(?:bulan|bln)\s*(?:januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|\d{1,2})\b/i', '', $cleanedTarget);
-            $cleanedTarget = preg_replace('/\b(?:tahun|thn)\s*\d{4}\b/i', '', $cleanedTarget);
-            $cleanedTarget = preg_replace('/\b(?:minggu|mg|ke|bulan|bln|ini|semua|penuh|full|lunas|iuran|kas|uang|sebesar|nominal|rp\.?\s*[\d.,]+(?:rb|ribu|k)?|dong|tolong|coba)\b/i', '', $cleanedTarget);
-            $cleanedTarget = trim(preg_replace('/\s+/', ' ', $cleanedTarget));
+        if ($isDirectBayarCmd || $isNaturalDuesPay) {
+            $matchedUsers = $this->extractUsersFromText($message);
+            $weeks = $this->extractWeeksFromText($message);
+            $weeksCount = $this->extractWeekCountFromText($message);
+            $payAll = (bool) preg_match('/\b(?:lunaskan|melunasi|lunasin|semua|penuh|full|sebulan|4\s*(?:minggu|mg))\b/i', $msg);
 
-            $parsedAction = [
-                'action' => 'bayar_iuran',
-                'student' => $cleanedTarget !== '' ? $cleanedTarget : null,
-                'weeks' => $weeks,
-                'pay_all' => $payAll,
-            ];
-            return $this->handleActionWithConfirmation($parsedAction, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $message);
+            if ($isDirectBayarCmd || !empty($matchedUsers)) {
+                $studentsList = array_map(function ($u) { return $u->name; }, $matchedUsers);
+                $fallbackStudent = null;
+                if (empty($studentsList) && $isDirectBayarCmd) {
+                    $rest = trim($mPay[1] ?? '');
+                    $cleanedTarget = preg_replace('/(?:selama\s+)?[1-4]\s*(?:minggu|mg)/i', '', $rest);
+                    $cleanedTarget = preg_replace('/(?:minggu|mg)(?:\s*ke)?\s*[\d,\s\-dan&]+/i', '', $cleanedTarget);
+                    $cleanedTarget = preg_replace('/\b(?:bulan|bln)\s*(?:januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|\d{1,2})\b/i', '', $cleanedTarget);
+                    $cleanedTarget = preg_replace('/\b(?:tahun|thn)\s*\d{4}\b/i', '', $cleanedTarget);
+                    $cleanedTarget = preg_replace('/\b(?:minggu|mg|ke|bulan|bln|ini|semua|penuh|full|lunas|iuran|kas|uang|sebesar|nominal|selama|tolong|catat|catatkan|dong|coba|rp\.?\s*[\d.,]+(?:rb|ribu|k)?)\b/i', '', $cleanedTarget);
+                    $cleanedTarget = trim(preg_replace('/\s+/', ' ', $cleanedTarget));
+                    if ($cleanedTarget !== '') {
+                        $fallbackStudent = $cleanedTarget;
+                    }
+                }
+
+                $parsedAction = [
+                    'action' => 'bayar_iuran',
+                    'students' => $studentsList,
+                    'student' => $fallbackStudent ?: ($studentsList[0] ?? null),
+                    'weeks' => $weeks,
+                    'weeks_count' => $weeksCount,
+                    'pay_all' => $payAll,
+                ];
+                return $this->handleActionWithConfirmation($parsedAction, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $message);
+            }
         }
 
         // B. Deteksi Reset Password Akun (contoh: "reset password Budi jadi 123456", "setel ulang sandi 6624600022 jadi baru123", "reset password")
@@ -837,8 +888,8 @@ class ChatbotController extends Controller
             return $this->handleActionWithConfirmation($parsedAction, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $message);
         }
 
-        // Penalaran kontekstual berbasis model AI
-        $parsedAction = $this->reasonActionWithAi($message);
+        // Penalaran kontekstual berbasis model AI (dengan konteks riwayat singkat untuk follow-up multi-turn)
+        $parsedAction = $this->reasonActionWithAi($message, $history);
         if (!empty($parsedAction['action']) && $parsedAction['action'] !== 'none') {
             return $this->handleActionWithConfirmation($parsedAction, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $message);
         }
@@ -930,6 +981,69 @@ class ChatbotController extends Controller
         sort($weeks);
 
         return $weeks;
+    }
+
+    /**
+     * Ekstrak jumlah minggu durasi pembayaran (contoh: "selama 4 minggu", "2 minggu", "sebulan")
+     */
+    private function extractWeekCountFromText(string $text): ?int
+    {
+        if (preg_match('/\b(?:selama\s+|sebanyak\s+|untuk\s+)?([1-4])\s*(?:minggu|mg)\b/i', $text, $m)) {
+            return (int) $m[1];
+        }
+        if (preg_match('/\b(?:sebulan|1\s*bulan|satu\s+bulan|penuh|full)\b/i', $text)) {
+            return 4;
+        }
+        return null;
+    }
+
+    /**
+     * Ekstrak seluruh akun pengguna unik yang disebut di dalam teks (mendukung multi-mahasiswa seperti "Tegar dan Gilang")
+     */
+    private function extractUsersFromText(string $text): array
+    {
+        $clean = strtolower(trim($text));
+        if ($clean === '') {
+            return [];
+        }
+
+        $allUsers = User::orderBy('id')->get();
+        $found = [];
+        $foundIds = [];
+
+        foreach ($allUsers as $u) {
+            $uNpm = trim((string) $u->npm);
+            $uName = strtolower(trim((string) $u->name));
+
+            if ($uNpm !== '' && strpos($clean, $uNpm) !== false) {
+                if (!isset($foundIds[$u->id])) {
+                    $found[] = $u;
+                    $foundIds[$u->id] = true;
+                }
+                continue;
+            }
+
+            if ($uName !== '' && preg_match('/\b' . preg_quote($uName, '/') . '\b/i', $clean)) {
+                if (!isset($foundIds[$u->id])) {
+                    $found[] = $u;
+                    $foundIds[$u->id] = true;
+                }
+                continue;
+            }
+
+            $tokens = preg_split('/\s+/', $uName);
+            foreach ($tokens as $tok) {
+                if (strlen($tok) >= 3 && preg_match('/\b' . preg_quote($tok, '/') . '\b/i', $clean)) {
+                    if (!isset($foundIds[$u->id])) {
+                        $found[] = $u;
+                        $foundIds[$u->id] = true;
+                    }
+                    break;
+                }
+            }
+        }
+
+        return $found;
     }
 
     /**
@@ -1031,8 +1145,6 @@ class ChatbotController extends Controller
 
             case 'bayar_iuran':
                 $activeClassSemester = AcademicService::getActiveSemester();
-                $studentParam = trim((string) ($actionData['student'] ?? ''));
-                $targetStudent = $studentParam !== '' ? $this->findUserByQuery($studentParam) : null;
 
                 $targetMonth = (int) now()->month;
                 $targetYear = (int) now()->year;
@@ -1052,7 +1164,55 @@ class ChatbotController extends Controller
                 }
                 $namaBulan = AcademicService::getNamaBulan($targetMonth);
 
-                if (!$targetStudent) {
+                // Kumpulkan 1 atau banyak mahasiswa target
+                $targetStudents = [];
+                $targetIds = [];
+                $rawStudentNames = [];
+                if (!empty($actionData['students']) && is_array($actionData['students'])) {
+                    foreach ($actionData['students'] as $sn) {
+                        $sTrim = trim((string) $sn);
+                        if ($sTrim !== '') {
+                            $rawStudentNames[] = $sTrim;
+                        }
+                    }
+                }
+                if (empty($rawStudentNames)) {
+                    $studentParam = trim((string) ($actionData['student'] ?? ''));
+                    if ($studentParam !== '') {
+                        $splitParts = preg_split('/\s*(?:,|\bdan\b|&)\s*/i', $studentParam);
+                        foreach ($splitParts as $sp) {
+                            $spTrim = trim($sp);
+                            if ($spTrim !== '') {
+                                $rawStudentNames[] = $spTrim;
+                            }
+                        }
+                    }
+                }
+
+                $notFoundNames = [];
+                foreach ($rawStudentNames as $nameQ) {
+                    $u = $this->findUserByQuery($nameQ);
+                    if ($u) {
+                        if (!isset($targetIds[$u->id])) {
+                            $targetStudents[] = $u;
+                            $targetIds[$u->id] = true;
+                        }
+                    } else {
+                        $notFoundNames[] = $nameQ;
+                    }
+                }
+
+                // Fallback ekstrak langsung dari teks pesan bila AI melewatkan sebagian nama
+                if (empty($targetStudents)) {
+                    foreach ($this->extractUsersFromText($rawMessage) as $u) {
+                        if (!isset($targetIds[$u->id])) {
+                            $targetStudents[] = $u;
+                            $targetIds[$u->id] = true;
+                        }
+                    }
+                }
+
+                if (empty($targetStudents)) {
                     $unpaidStudents = [];
                     foreach (User::where('status_akademik', 'Aktif')->orderBy('name')->take(8)->get() as $u) {
                         $paidCnt = DuesPayment::where('user_id', $u->id)
@@ -1068,22 +1228,11 @@ class ChatbotController extends Controller
                     $listText = !empty($unpaidStudents)
                         ? "\n\nDaftar anggota yang belum lunas bulan {$namaBulan} {$targetYear}:\n" . implode("\n", $unpaidStudents)
                         : '';
-                    return "Mohon sebutkan **nama atau NPM mahasiswa** yang iurannya ingin dibayarkan.{$listText}\n\n"
-                        . "Contoh perintah: *bayar iuran Budi minggu 1 dan 2* atau *lunaskan iuran Budi*.";
-                }
-
-                $paidWeeks = DuesPayment::where('user_id', $targetStudent->id)
-                    ->where('semester', $activeClassSemester)
-                    ->where('month', $targetMonth)
-                    ->where('year', $targetYear)
-                    ->where('status', 'lunas')
-                    ->pluck('week_number')
-                    ->map(function ($w) { return (int) $w; })
-                    ->toArray();
-
-                $unpaidWeeks = array_values(array_diff([1, 2, 3, 4], $paidWeeks));
-                if (empty($unpaidWeeks)) {
-                    return "ℹ️ Mahasiswa **{$targetStudent->name}** (NPM: {$targetStudent->npm}) sudah **Lunas Penuh (4/4 Minggu)** untuk bulan **{$namaBulan} {$targetYear}** ({$activeClassSemester}).";
+                    $notFoundNote = !empty($notFoundNames)
+                        ? "⚠️ Nama/NPM **" . implode(', ', $notFoundNames) . "** tidak ditemukan di daftar pengguna.\n\n"
+                        : '';
+                    return "{$notFoundNote}Mohon sebutkan **nama atau NPM mahasiswa** yang iurannya ingin dibayarkan.{$listText}\n\n"
+                        . "Contoh perintah: *bayar iuran Budi minggu 1 dan 2* atau *lunaskan iuran Tegar dan Gilang*.";
                 }
 
                 $requestedWeeks = [];
@@ -1103,48 +1252,116 @@ class ChatbotController extends Controller
                     }
                 }
 
-                $payAll = !empty($actionData['pay_all']);
-                if ($payAll) {
-                    $weeksToPay = $unpaidWeeks;
-                } elseif (!empty($requestedWeeks)) {
-                    $alreadyPaidReq = array_values(array_intersect($requestedWeeks, $paidWeeks));
-                    $weeksToPay = array_values(array_diff($requestedWeeks, $paidWeeks));
-                    if (empty($weeksToPay)) {
-                        return "⚠️ Minggu ke-" . implode(', ', $alreadyPaidReq) . " untuk **{$targetStudent->name}** bulan **{$namaBulan} {$targetYear}** sudah berstatus **Lunas**.\n\n"
-                            . "Minggu yang belum dibayar: **Minggu ke-" . implode(', ', $unpaidWeeks) . "**.\n"
-                            . "Contoh: *bayar iuran {$targetStudent->name} minggu " . $unpaidWeeks[0] . "*.";
-                    }
-                } else {
-                    return "Mahasiswa **{$targetStudent->name}** (NPM: {$targetStudent->npm}) belum membayar iuran bulan **{$namaBulan} {$targetYear}** pada **Minggu ke-" . implode(', ', $unpaidWeeks) . "**.\n\n"
-                        . "Silakan sebutkan minggu yang ingin dibayar, contoh:\n"
-                        . "• *bayar iuran {$targetStudent->name} minggu " . $unpaidWeeks[0] . "*\n"
-                        . "• *lunaskan iuran {$targetStudent->name}* (bayar semua " . count($unpaidWeeks) . " minggu tersisa)";
-                }
+                $weeksCount = isset($actionData['weeks_count']) && is_numeric($actionData['weeks_count'])
+                    ? max(1, min(4, (int) $actionData['weeks_count']))
+                    : $this->extractWeekCountFromText($rawMessage);
+                $payAll = !empty($actionData['pay_all']) || ($weeksCount === 4);
 
                 $rate = AcademicService::getDuesRatePerWeek();
-                $totalAmount = count($weeksToPay) * $rate;
+                $entries = [];
+                $alreadyLunasAll = [];
+                $needsWeekSpec = [];
 
-                $actionData['student_id'] = $targetStudent->id;
-                $actionData['student'] = $targetStudent->name;
-                $actionData['weeks'] = $weeksToPay;
+                foreach ($targetStudents as $st) {
+                    $paidWeeks = DuesPayment::where('user_id', $st->id)
+                        ->where('semester', $activeClassSemester)
+                        ->where('month', $targetMonth)
+                        ->where('year', $targetYear)
+                        ->where('status', 'lunas')
+                        ->pluck('week_number')
+                        ->map(function ($w) { return (int) $w; })
+                        ->toArray();
+
+                    $unpaidWeeks = array_values(array_diff([1, 2, 3, 4], $paidWeeks));
+                    if (empty($unpaidWeeks)) {
+                        $alreadyLunasAll[] = "{$st->name} (NPM: {$st->npm})";
+                        continue;
+                    }
+
+                    if ($payAll) {
+                        $weeksToPay = $unpaidWeeks;
+                    } elseif (!empty($requestedWeeks)) {
+                        $weeksToPay = array_values(array_diff($requestedWeeks, $paidWeeks));
+                        if (empty($weeksToPay)) {
+                            $alreadyLunasAll[] = "{$st->name} (Minggu ke-" . implode(', ', $requestedWeeks) . " sudah lunas)";
+                            continue;
+                        }
+                    } elseif ($weeksCount !== null && $weeksCount >= 1) {
+                        $weeksToPay = array_slice($unpaidWeeks, 0, min(count($unpaidWeeks), $weeksCount));
+                    } else {
+                        $needsWeekSpec[] = "• **{$st->name}** (NPM: {$st->npm}) — Belum lunas: **Minggu ke-" . implode(', ', $unpaidWeeks) . "**";
+                        continue;
+                    }
+
+                    $entries[] = [
+                        'student_id' => $st->id,
+                        'student_name' => $st->name,
+                        'student_npm' => $st->npm,
+                        'weeks' => $weeksToPay,
+                        'amount' => count($weeksToPay) * $rate,
+                    ];
+                }
+
+                if (empty($entries)) {
+                    if (!empty($needsWeekSpec)) {
+                        $firstSt = $targetStudents[0];
+                        return "Status iuran bulan **{$namaBulan} {$targetYear}** ({$activeClassSemester}):\n"
+                            . implode("\n", $needsWeekSpec) . "\n\n"
+                            . "Silakan sebutkan minggu yang ingin dibayar, contoh:\n"
+                            . "• *bayar iuran {$firstSt->name} minggu 1*\n"
+                            . "• *lunaskan iuran " . implode(' dan ', array_map(function ($s) { return $s->name; }, $targetStudents)) . "*";
+                    }
+                    return "ℹ️ Seluruh mahasiswa yang dipilih (" . implode(', ', $alreadyLunasAll) . ") sudah berstatus **Lunas** untuk bulan **{$namaBulan} {$targetYear}** ({$activeClassSemester}). Tidak ada pembayaran ganda yang perlu dicatat.";
+                }
+
+                $grandTotal = 0;
+                $detailLines = [];
+                foreach ($entries as $ent) {
+                    $grandTotal += $ent['amount'];
+                    $detailLines[] = "• **{$ent['student_name']}** (NPM: {$ent['student_npm']}): **Minggu ke-" . implode(', ', $ent['weeks']) . "** (" . count($ent['weeks']) . " minggu = **Rp " . number_format($ent['amount'], 0, ',', '.') . "**)";
+                }
+
+                $actionData['entries'] = $entries;
+                $actionData['student_id'] = $entries[0]['student_id'];
+                $actionData['student'] = $entries[0]['student_name'];
+                $actionData['weeks'] = $entries[0]['weeks'];
                 $actionData['month'] = $targetMonth;
                 $actionData['year'] = $targetYear;
                 $actionData['rate'] = $rate;
-                $actionData['amount'] = $totalAmount;
+                $actionData['amount'] = $grandTotal;
+
+                $skipNote = !empty($alreadyLunasAll)
+                    ? "\n• **Dilewati (Sudah Lunas)**: " . implode(', ', $alreadyLunasAll)
+                    : '';
 
                 $confirmationMsg = "⚠️ **Konfirmasi Pembayaran Iuran Mingguan**\n\n"
                     . "Mohon periksa dan konfirmasi rincian pembayaran iuran berikut:\n"
-                    . "• **Mahasiswa**: {$targetStudent->name} (NPM: {$targetStudent->npm})\n"
+                    . implode("\n", $detailLines) . "{$skipNote}\n"
                     . "• **Periode**: {$namaBulan} {$targetYear} ({$activeClassSemester})\n"
-                    . "• **Minggu Dibayar**: **Minggu ke-" . implode(', ', $weeksToPay) . "** (" . count($weeksToPay) . " minggu)\n"
                     . "• **Tarif**: Rp " . number_format($rate, 0, ',', '.') . " / minggu\n"
-                    . "• **Total Nominal**: **Rp " . number_format($totalAmount, 0, ',', '.') . "**\n"
+                    . "• **Total Nominal**: **Rp " . number_format($grandTotal, 0, ',', '.') . "**\n"
                     . "• **Otoritas**: Bendahara ({$user->name})\n\n"
                     . "Ketik **Ya** atau **Konfirmasi** untuk menyimpan pembayaran, atau ketik **Batal** untuk membatalkan.";
                 break;
 
             case 'catat_pemasukan':
                 $amount = (float) ($actionData['amount'] ?? 0);
+                // Jika AI mengklasifikasikan pembayaran iuran mingguan sebagai catat_pemasukan tanpa nominal eksplisit, arahkan ke bayar_iuran
+                if ($amount < 500) {
+                    $mentionedUsers = $this->extractUsersFromText($rawMessage);
+                    $wkCountFallback = $this->extractWeekCountFromText($rawMessage);
+                    $wksFallback = $this->extractWeeksFromText($rawMessage);
+                    if (!empty($mentionedUsers) && ($wkCountFallback !== null || !empty($wksFallback) || preg_match('/\b(?:iuran|minggu|mg|lunas|lunaskan)\b/i', $rawMessage))) {
+                        $redirectAction = [
+                            'action' => 'bayar_iuran',
+                            'students' => array_map(function ($u) { return $u->name; }, $mentionedUsers),
+                            'weeks' => $wksFallback,
+                            'weeks_count' => $wkCountFallback,
+                            'pay_all' => $wkCountFallback === 4 || (bool) preg_match('/\b(?:lunaskan|lunasin|semua|penuh|full|sebulan)\b/i', $rawMessage),
+                        ];
+                        return $this->handleActionWithConfirmation($redirectAction, $user, $bendaharaName, $ketuaName, $adminName, $userRoleLabel, $rawMessage);
+                    }
+                }
                 if ($amount < 500 || $amount > 100000000) {
                     return "Untuk mencatat pemasukan kas, mohon lengkapi atribut berikut secara valid:\n\n"
                         . "• **Nominal**: Besaran uang masuk minimal Rp 500 (contoh: *20000*, *50rb*)\n"
@@ -1912,7 +2129,7 @@ class ChatbotController extends Controller
     /**
      * AI Action Reasoner: Mengekstrak perintah bahasa alami dengan penalaran teliti dan koreksi typo
      */
-    private function reasonActionWithAi(string $message): array
+    private function reasonActionWithAi(string $message, array $history = []): array
     {
         $users = User::all(['id', 'name', 'npm', 'role', 'semester', 'status_akademik'])->map(function($u) {
             return "{$u->name} [NPM: {$u->npm}, Role: {$u->role}, {$u->semester}, {$u->status_akademik}]";
@@ -1940,7 +2157,7 @@ PEDOMAN PENALARAN:
 2. PENCOCOKAN DATA SISTEM:
    - Untuk ubah_role / ubah_akademik / reset_password / hapus_akun: cocokkan nama/NPM dari daftar Pengguna.
    - Untuk kas: konversi nominal angka ("15rb" -> 15000, "50k" -> 50000, "100 ribu" -> 100000).
-   - Untuk bayar_iuran: jika perintah membayar/melunasi iuran mingguan mahasiswa (misal: "bayar iuran Budi minggu 1 dan 2", "lunaskan iuran Budi", "Budi bayar kas minggu 3"), GUNAKAN action "bayar_iuran" dengan "student", "weeks" (array angka 1..4 atau []), dan "pay_all" (true jika lunaskan semua/penuh).
+   - Untuk bayar_iuran: jika perintah membayar/melunasi/mencatat iuran mingguan 1 ATAU BANYAK mahasiswa (misal: "bayar iuran Budi minggu 1 dan 2", "Tegar dan Gilang membayar kas selama 4 minggu tolong catat", "lunaskan iuran Tegar dan Gilang"), GUNAKAN action "bayar_iuran" dengan "students" (array nama/NPM mahasiswa yang disebut), "weeks" (array angka 1..4 jika spesifik), "weeks_count" (angka 1..4 jika disebut durasi seperti "2 minggu" atau "4 minggu"), dan "pay_all" (true jika lunaskan semua/penuh/4 minggu/sebulan).
    - Untuk catat_pemasukan: untuk pemasukan kas umum atau pemasukan dengan nominal eksplisit (misal: "catat pemasukan 50000 sumbangan"). Jika menyebut mahasiswa + nominal, isi "student".
    - Untuk batalkan_iuran: jika membatalkan/menghapus status lunas iuran mahasiswa (misal: "batalkan iuran tegar minggu 2"), GUNAKAN action "batalkan_iuran" dengan "student" dan "week" (1..4 atau null).
    - Untuk hapus_transaksi / edit_transaksi / pulihkan_transaksi: isi "id" dengan angka ID atau null jika tidak disebut.
@@ -1949,7 +2166,7 @@ PEDOMAN PENALARAN:
    - Untuk reset_password: jika menyetel ulang kata sandi pengguna lain (misal: "reset password Budi jadi baru123"), GUNAKAN action "reset_password" dengan "target_user" dan "new_password" (atau null jika belum disebut).
    - Untuk tambah_akun: isi "name", "npm", "role" (default "mahasiswa"), opsional "password" (string|null) dan "semester" (string|null).
 3. AKSI YANG DIDUKUNG:
-   - bayar_iuran: {action:"bayar_iuran", student:string|null, weeks:int[], pay_all:bool}
+   - bayar_iuran: {action:"bayar_iuran", students:string[], student:string|null, weeks:int[], weeks_count:int|null, pay_all:bool}
    - batalkan_iuran: {action:"batalkan_iuran", student:string|null, week:int|null}
    - catat_pemasukan: {action:"catat_pemasukan", amount:int, description:string, student:string|null}
    - catat_pengeluaran: {action:"catat_pengeluaran", amount:int, description:string}
@@ -1970,8 +2187,19 @@ PROMPT;
 
         $messages = [
             ['role' => 'system', 'content' => $systemPrompt],
-            ['role' => 'user', 'content' => $message],
         ];
+        if (!empty($history)) {
+            $recentHistory = array_slice($history, -4);
+            foreach ($recentHistory as $h) {
+                if (isset($h['role'], $h['content'])) {
+                    $messages[] = [
+                        'role' => $h['role'],
+                        'content' => mb_substr((string) $h['content'], 0, 500),
+                    ];
+                }
+            }
+        }
+        $messages[] = ['role' => 'user', 'content' => $message];
 
         $resp = $this->callAiWithFallback($messages, 0.0, 280);
         if ($resp['success']) {
@@ -2370,104 +2598,158 @@ PROMPT;
             . "- Seluruh mahasiswa aktif & data pembukuan kas kelas otomatis beralih ke periode semester ini.";
     }
 
-    // Eksekusi aksi Bendahara (bayar iuran mingguan, mutasi kas, tarif, pembatalan, backup/restore)
+    // Eksekusi aksi Bendahara (bayar iuran mingguan 1 atau banyak mahasiswa, mutasi kas, tarif, pembatalan, backup/restore)
     private function actionBayarIuran($user, array $actionData)
     {
-        $studentId = (int) ($actionData['student_id'] ?? 0);
-        $targetStudent = $studentId > 0 ? User::find($studentId) : $this->findUserByQuery((string) ($actionData['student'] ?? ''));
-
-        if (!$targetStudent) {
-            return "❌ GAGAL: Mahasiswa tidak ditemukan.";
-        }
-
         $activeClassSemester = AcademicService::getActiveSemester();
         $targetMonth = (int) ($actionData['month'] ?? now()->month);
         $targetYear = (int) ($actionData['year'] ?? now()->year);
         $rate = (int) ($actionData['rate'] ?? AcademicService::getDuesRatePerWeek());
-        $requestedWeeks = is_array($actionData['weeks'] ?? null) ? $actionData['weeks'] : [];
+        $namaBulan = AcademicService::getNamaBulan($targetMonth);
 
-        // Re-validasi minggu yang masih belum lunas tepat sebelum eksekusi
-        $alreadyPaid = DuesPayment::where('user_id', $targetStudent->id)
-            ->where('semester', $activeClassSemester)
-            ->where('month', $targetMonth)
-            ->where('year', $targetYear)
-            ->where('status', 'lunas')
-            ->pluck('week_number')
-            ->map(function ($w) { return (int) $w; })
-            ->toArray();
-
-        $weeksToPay = array_values(array_diff(array_map('intval', $requestedWeeks), $alreadyPaid));
-        sort($weeksToPay);
-
-        if (empty($weeksToPay)) {
-            return "ℹ️ Semua minggu yang dipilih untuk **{$targetStudent->name}** sudah berstatus **Lunas**. Tidak ada pembayaran ganda yang dicatat.";
+        $rawEntries = [];
+        if (!empty($actionData['entries']) && is_array($actionData['entries'])) {
+            $rawEntries = $actionData['entries'];
+        } else {
+            $studentId = (int) ($actionData['student_id'] ?? 0);
+            $fallbackStudent = $studentId > 0 ? User::find($studentId) : $this->findUserByQuery((string) ($actionData['student'] ?? ''));
+            if ($fallbackStudent) {
+                $rawEntries[] = [
+                    'student_id' => $fallbackStudent->id,
+                    'weeks' => is_array($actionData['weeks'] ?? null) ? $actionData['weeks'] : [],
+                ];
+            }
         }
 
-        $totalAmount = count($weeksToPay) * $rate;
-        $namaBulan = AcademicService::getNamaBulan($targetMonth);
-        $weeksLabel = implode(', ', array_map(function ($w) { return "Mg {$w}"; }, $weeksToPay));
-        $description = "[Via AI] Iuran Kas: {$targetStudent->name} ({$weeksLabel} Bln {$targetMonth}/{$targetYear} - {$activeClassSemester})";
+        if (empty($rawEntries)) {
+            return "❌ GAGAL: Mahasiswa tidak ditemukan.";
+        }
 
-        $transaction = null;
+        $validatedPlans = [];
+        foreach ($rawEntries as $ent) {
+            $st = User::find((int) ($ent['student_id'] ?? 0));
+            if (!$st) {
+                continue;
+            }
+            $reqWeeks = array_map('intval', is_array($ent['weeks'] ?? null) ? $ent['weeks'] : []);
+            $alreadyPaid = DuesPayment::where('user_id', $st->id)
+                ->where('semester', $activeClassSemester)
+                ->where('month', $targetMonth)
+                ->where('year', $targetYear)
+                ->where('status', 'lunas')
+                ->pluck('week_number')
+                ->map(function ($w) { return (int) $w; })
+                ->toArray();
+
+            $weeksToPay = array_values(array_diff($reqWeeks, $alreadyPaid));
+            sort($weeksToPay);
+            if (empty($weeksToPay)) {
+                continue;
+            }
+
+            $validatedPlans[] = [
+                'student' => $st,
+                'weeks' => $weeksToPay,
+                'amount' => count($weeksToPay) * $rate,
+            ];
+        }
+
+        if (empty($validatedPlans)) {
+            return "ℹ️ Semua minggu yang dipilih sudah berstatus **Lunas**. Tidak ada pembayaran ganda yang dicatat.";
+        }
+
+        $recordedResults = [];
         DB::transaction(function () use (
-            &$transaction,
-            $targetStudent,
-            $totalAmount,
-            $description,
+            &$recordedResults,
+            $validatedPlans,
             $activeClassSemester,
-            $weeksToPay,
             $targetMonth,
             $targetYear
         ) {
-            $transaction = KasTransaction::create([
-                'user_id' => $targetStudent->id,
-                'type' => 'pemasukan',
-                'amount' => $totalAmount,
-                'date' => Carbon::today()->format('Y-m-d'),
-                'description' => $description,
-                'semester' => $activeClassSemester,
-                'tahun_ajaran' => AcademicService::getTahunAjaran($activeClassSemester),
-            ]);
+            foreach ($validatedPlans as $plan) {
+                $st = $plan['student'];
+                $weeksToPay = $plan['weeks'];
+                $amount = $plan['amount'];
+                $weeksLabel = implode(', ', array_map(function ($w) { return "Mg {$w}"; }, $weeksToPay));
+                $description = "[Via AI] Iuran Kas: {$st->name} ({$weeksLabel} Bln {$targetMonth}/{$targetYear} - {$activeClassSemester})";
 
-            foreach ($weeksToPay as $wk) {
-                DuesPayment::updateOrCreate(
-                    [
-                        'user_id' => $targetStudent->id,
-                        'week_number' => $wk,
-                        'month' => $targetMonth,
-                        'year' => $targetYear,
-                        'semester' => $activeClassSemester,
-                    ],
-                    [
-                        'kas_transaction_id' => $transaction->id,
-                        'status' => 'lunas',
-                    ]
-                );
+                $tx = KasTransaction::create([
+                    'user_id' => $st->id,
+                    'type' => 'pemasukan',
+                    'amount' => $amount,
+                    'date' => Carbon::today()->format('Y-m-d'),
+                    'description' => $description,
+                    'semester' => $activeClassSemester,
+                    'tahun_ajaran' => AcademicService::getTahunAjaran($activeClassSemester),
+                ]);
+
+                foreach ($weeksToPay as $wk) {
+                    DuesPayment::updateOrCreate(
+                        [
+                            'user_id' => $st->id,
+                            'week_number' => $wk,
+                            'month' => $targetMonth,
+                            'year' => $targetYear,
+                            'semester' => $activeClassSemester,
+                        ],
+                        [
+                            'kas_transaction_id' => $tx->id,
+                            'status' => 'lunas',
+                        ]
+                    );
+                }
+
+                $recordedResults[] = [
+                    'transaction' => $tx,
+                    'student' => $st,
+                    'weeks' => $weeksToPay,
+                    'weeks_label' => $weeksLabel,
+                    'amount' => $amount,
+                ];
             }
         });
 
-        AuditLog::record(
-            'bayar_iuran',
-            "Mencatat pembayaran iuran {$targetStudent->name} (NPM: {$targetStudent->npm}) {$weeksLabel} {$namaBulan} {$targetYear} sebesar Rp " . number_format($totalAmount, 0, ',', '.') . " via AI Chatbot",
-            $user,
-            'chatbot',
-            [
-                'transaction_id' => $transaction ? $transaction->id : null,
-                'student_id' => $targetStudent->id,
-                'weeks' => $weeksToPay,
-                'amount' => $totalAmount,
-                'semester' => $activeClassSemester,
-            ]
-        );
+        $grandTotal = 0;
+        $summaryLines = [];
+        foreach ($recordedResults as $res) {
+            $tx = $res['transaction'];
+            $st = $res['student'];
+            $grandTotal += $res['amount'];
+            $summaryLines[] = "- **#{$tx->id}** | **{$st->name}** (NPM: {$st->npm}): **Minggu ke-" . implode(', ', $res['weeks']) . "** — **Rp " . number_format($res['amount'], 0, ',', '.') . "**";
+
+            AuditLog::record(
+                'bayar_iuran',
+                "Mencatat pembayaran iuran {$st->name} (NPM: {$st->npm}) {$res['weeks_label']} {$namaBulan} {$targetYear} sebesar Rp " . number_format($res['amount'], 0, ',', '.') . " via AI Chatbot",
+                $user,
+                'chatbot',
+                [
+                    'transaction_id' => $tx->id,
+                    'student_id' => $st->id,
+                    'weeks' => $res['weeks'],
+                    'amount' => $res['amount'],
+                    'semester' => $activeClassSemester,
+                ]
+            );
+        }
 
         $newIn = KasTransaction::where('semester', $activeClassSemester)->where('type', 'pemasukan')->sum('amount');
         $newOut = KasTransaction::where('semester', $activeClassSemester)->where('type', 'pengeluaran')->sum('amount');
         $newSaldo = $newIn - $newOut;
 
-        return "✅ BERHASIL dicatat oleh Bendahara ({$user->name})!\n"
-            . "- Transaksi: **#{$transaction->id}** | Pemasukan Iuran: **Rp " . number_format($totalAmount, 0, ',', '.') . "**\n"
-            . "- Mahasiswa: **{$targetStudent->name}** (NPM: {$targetStudent->npm})\n"
-            . "- Status Lunas: **Minggu ke-" . implode(', ', $weeksToPay) . "** ({$namaBulan} {$targetYear} - {$activeClassSemester})\n"
+        if (count($recordedResults) === 1) {
+            $only = $recordedResults[0];
+            return "✅ BERHASIL dicatat oleh Bendahara ({$user->name})!\n"
+                . "- Transaksi: **#{$only['transaction']->id}** | Pemasukan Iuran: **Rp " . number_format($only['amount'], 0, ',', '.') . "**\n"
+                . "- Mahasiswa: **{$only['student']->name}** (NPM: {$only['student']->npm})\n"
+                . "- Status Lunas: **Minggu ke-" . implode(', ', $only['weeks']) . "** ({$namaBulan} {$targetYear} - {$activeClassSemester})\n"
+                . "- Saldo Kas Aktif Sekarang: **Rp " . number_format($newSaldo, 0, ',', '.') . "**\n"
+                . "- Matriks Buku Kas, Arsip, dan Dashboard langsung tersinkronisasi.";
+        }
+
+        return "✅ BERHASIL dicatat untuk **" . count($recordedResults) . " mahasiswa** oleh Bendahara ({$user->name})!\n"
+            . implode("\n", $summaryLines) . "\n"
+            . "- Periode: {$namaBulan} {$targetYear} ({$activeClassSemester})\n"
+            . "- Total Pemasukan Tercatat: **Rp " . number_format($grandTotal, 0, ',', '.') . "**\n"
             . "- Saldo Kas Aktif Sekarang: **Rp " . number_format($newSaldo, 0, ',', '.') . "**\n"
             . "- Matriks Buku Kas, Arsip, dan Dashboard langsung tersinkronisasi.";
     }
@@ -3321,6 +3603,12 @@ AI SUDAH BISA melakukan CRUD data (Create, Read, Update, Delete) secara langsung
 3. Mahasiswa (Read-Only):
    - Hanya membaca data (cek tunggakan pribadi, saldo, tarif, pengurus, rekap Excel, simulasi anggaran). Dilarang Create/Update/Delete data keuangan maupun akun.
 *Jika user meminta aksi di luar hak perannya, TOLAK SECARA LANGSUNG, TEGAS, DAN SINGKAT.*
+
+### LARANGAN KERAS HALUSINASI EKSEKUSI CRUD (WAJIB DIPATUHI):
+- Jika pesan masuk ke mode percakapan umum ini, artinya mesin eksekusi database BELUM memunculkan Kartu Konfirmasi.
+- **DILARANG KERAS** berpura-pura atau menulis "Berhasil mencatat...", "Sudah dicatat...", "Saldo kas kini menjadi...", atau mengklaim data sudah masuk/diubah/dihapus padahal tidak ada Kartu Konfirmasi yang dikonfirmasi pengguna!
+- **DILARANG KERAS** mengatakan "Saya tidak memiliki hak akses untuk mengubah database". Mesin AI Chatbot MEMANG BISA melakukan CRUD langsung ke database sesuai role melalui Kartu Konfirmasi.
+- Jika pengguna berniat melakukan CRUD namun perintahnya belum lengkap/terpotong, arahkan pengguna menulis **1 kalimat perintah lengkap** sesuai format rolenya agar Kartu Konfirmasi (tombol Ya, Konfirmasi / Batal) muncul dan perubahan benar-benar tersimpan ke database.
 
 ## DATA SINKRONISASI REAL-TIME KELAS & BUKU KAS:
 - Kelas: Informatika {$kelasLabel} ({$activeClassSemester}, TA {$tahunAjaran})
