@@ -1,5 +1,13 @@
 <?php
 
+$bootstrapCache = __DIR__.'/../bootstrap/cache';
+foreach (['packages.php', 'services.php', 'config.php', 'routes.php', 'events.php'] as $cacheFile) {
+    $cachePath = $bootstrapCache.'/'.$cacheFile;
+    if (is_file($cachePath)) {
+        @unlink($cachePath);
+    }
+}
+
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
 
