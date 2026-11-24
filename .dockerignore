@@ -8,3 +8,8 @@ tests
 storage/logs/*.log
 bootstrap/cache/*.php
 composer.phar
+bootstrap/cache/packages.php
+bootstrap/cache/services.php
+bootstrap/cache/config.php
+bootstrap/cache/routes.php
+bootstrap/cache/events.php
