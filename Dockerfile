@@ -18,7 +18,8 @@ RUN composer install \
     --prefer-dist
 
 COPY . .
-RUN mkdir -p \
+RUN rm -f bootstrap/cache/packages.php bootstrap/cache/services.php \
+    && mkdir -p \
         storage/framework/cache \
         storage/framework/sessions \
         storage/framework/views \
@@ -44,4 +45,4 @@ ENV PORT=80 \
 
 USER www-data
 
-CMD ["sh", "-c", "cd /app && php artisan optimize:clear && php artisan package:discover --ansi && php artisan view:cache && exec frankenphp run --config /etc/frankenphp/Caddyfile"]
+CMD ["sh", "-c", "cd /app && rm -f bootstrap/cache/packages.php bootstrap/cache/services.php && php artisan optimize:clear && php artisan package:discover --ansi && php artisan view:cache || true; exec frankenphp run --config /etc/frankenphp/Caddyfile"]
