@@ -10,12 +10,11 @@ FROM base AS dependencies
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 COPY composer.json composer.lock ./
 RUN composer install \
-    --no-dev \
-    --no-interaction \
-    --no-progress \
-    --no-scripts \
-    --optimize-autoloader \
-    --prefer-dist
+        --no-scripts \
+        --no-interaction \
+        --no-progress \
+        --optimize-autoloader \
+        --prefer-dist
 
 COPY . .
 RUN rm -f bootstrap/cache/packages.php bootstrap/cache/services.php \
@@ -45,4 +44,4 @@ ENV PORT=80 \
 
 USER www-data
 
-CMD ["sh", "-c", "cd /app && rm -f bootstrap/cache/packages.php bootstrap/cache/services.php && php artisan optimize:clear && php artisan package:discover --ansi && php artisan view:cache || true; exec frankenphp run --config /etc/frankenphp/Caddyfile"]
+CMD ["sh", "-c", "cd /app && rm -f bootstrap/cache/packages.php bootstrap/cache/services.php && php artisan package:discover --ansi && exec frankenphp run --config /etc/frankenphp/Caddyfile"]
