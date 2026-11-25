@@ -1,0 +1,11 @@
+@extends('errors.layout')
+
+@section('title', '403 - Akses Ditolak')
+@section('code', '403')
+@section('code_left', '4')
+@section('code_mid', '0')
+@section('code_right', '3')
+@section('bubble_text', '403!')
+@section('accent_color', '#be123c')
+@section('headline', 'Maaf, Anda tidak memiliki izin untuk membuka halaman ini.')
+@section('description', 'Halaman atau tindakan ini dibatasi khusus untuk peran pengurus tertentu (Super Admin, Ketua Kelas, atau Bendahara).')
