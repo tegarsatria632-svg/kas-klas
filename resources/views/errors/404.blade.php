@@ -228,10 +228,10 @@
                 Jangan khawatir, Anda dapat kembali ke halaman utama Sistem Pengelolaan Kas S1 Informatika UPS Tegal untuk melanjutkan aktivitas.
             </p>
             <div class="err404-actions">
-                <a href="{{ auth()->check() ? route('dashboard') : route('login') }}" class="err404-btn-primary">
-                    {{ auth()->check() ? 'Kembali ke Dashboard' : 'Kembali ke Beranda' }}
+                <a href="{{ url('/') }}" class="err404-btn-primary">
+                    Kembali ke Beranda
                 </a>
-                <button type="button" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '{{ auth()->check() ? route('dashboard') : route('login') }}'; }" class="err404-btn-secondary">
+                <button type="button" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '{{ url('/') }}'; }" class="err404-btn-secondary">
                     Halaman Sebelumnya
                 </button>
             </div>
