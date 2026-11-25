@@ -8,29 +8,43 @@
         bottom: 24px;
         right: 24px;
         z-index: 9998;
-        width: 56px;
-        height: 56px;
+        width: 60px;
+        height: 60px;
         border-radius: 50%;
-        background: linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%);
-        color: #fff;
-        border: none;
+        background: #ffffff;
+        color: #3143da;
+        border: 2px solid #dbeafe;
+        padding: 0;
         cursor: grab;
         display: flex;
         align-items: center;
         justify-content: center;
-        box-shadow: 0 8px 32px rgba(15, 23, 42, 0.35), 0 2px 8px rgba(15, 23, 42, 0.2);
-        transition: transform 0.25s ease, opacity 0.25s ease, box-shadow 0.25s ease;
-        animation: chatbot-fab-pulse 3s ease-in-out infinite;
+        overflow: visible;
+        box-shadow: 0 10px 28px rgba(49, 67, 218, 0.22), 0 3px 10px rgba(15, 23, 42, 0.12);
+        transition: transform 0.25s ease, opacity 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
         touch-action: none;
         user-select: none;
         -webkit-user-select: none;
     }
 
+    #chatbot-fab:focus-visible {
+        outline: 3px solid #3143da;
+        outline-offset: 3px;
+    }
+
     #chatbot-fab.is-dragging {
         cursor: grabbing !important;
         transition: none !important;
+        box-shadow: 0 16px 40px rgba(49, 67, 218, 0.32) !important;
+    }
+
+    #chatbot-fab.is-dragging .chatbot-fab-mascot,
+    #chatbot-fab.is-dragging .chatbot-hy-bubble {
         animation: none !important;
-        box-shadow: 0 16px 48px rgba(15, 23, 42, 0.5) !important;
+    }
+
+    #chatbot-fab.is-dragging .chatbot-hy-bubble {
+        opacity: 0.4;
     }
 
     #chatbot-fab.chatbot-fab-hidden {
@@ -40,41 +54,125 @@
     }
 
     #chatbot-fab:hover:not(.is-dragging):not(.chatbot-fab-hidden) {
-        transform: scale(1.08);
-        box-shadow: 0 12px 40px rgba(15, 23, 42, 0.45), 0 4px 12px rgba(15, 23, 42, 0.3);
+        transform: scale(1.07);
+        border-color: #3143da;
+        box-shadow: 0 14px 34px rgba(49, 67, 218, 0.3), 0 4px 12px rgba(15, 23, 42, 0.14);
     }
 
     #chatbot-fab:active:not(.is-dragging) {
-        transform: scale(0.96);
+        transform: scale(0.95);
     }
 
-    #chatbot-fab svg {
-        width: 26px;
-        height: 26px;
-        transition: transform 0.3s ease;
+    #chatbot-fab .chatbot-fab-mascot {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        object-fit: contain;
+        display: block;
         pointer-events: none;
+        animation: chatbot-mascot-alive 3.4s ease-in-out infinite;
+        transition: transform 0.25s ease;
+        transform-origin: center bottom;
     }
 
-    #chatbot-fab:hover:not(.is-dragging) svg {
-        transform: rotate(-10deg);
+    #chatbot-fab:hover:not(.is-dragging) .chatbot-fab-mascot {
+        animation-play-state: paused;
+        transform: scale(1.08) rotate(-6deg);
+    }
+
+    /* Bubble sapaan HY yang menyatu & bergerak hidup bersama maskot */
+    #chatbot-fab .chatbot-hy-bubble {
+        position: absolute;
+        bottom: calc(100% + 9px);
+        right: 2px;
+        background: #3143da;
+        color: #ffffff;
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 11.5px;
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: 0.04em;
+        padding: 6px 10px;
+        border-radius: 12px 12px 3px 12px;
+        white-space: nowrap;
+        pointer-events: none;
+        box-shadow: 0 6px 16px rgba(49, 67, 218, 0.3);
+        border: 1.5px solid #ffffff;
+        animation: chatbot-hy-wave 3.4s ease-in-out infinite;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    #chatbot-fab .chatbot-hy-bubble::after {
+        content: '';
+        position: absolute;
+        top: 100%;
+        right: 11px;
+        border-width: 6px 5px 0 5px;
+        border-style: solid;
+        border-color: #3143da transparent transparent transparent;
+    }
+
+    #chatbot-fab.hy-below .chatbot-hy-bubble {
+        bottom: auto;
+        top: calc(100% + 9px);
+        border-radius: 12px 3px 12px 12px;
+    }
+
+    #chatbot-fab.hy-below .chatbot-hy-bubble::after {
+        top: auto;
+        bottom: 100%;
+        border-width: 0 5px 6px 5px;
+        border-color: transparent transparent #3143da transparent;
+    }
+
+    #chatbot-fab.hy-left .chatbot-hy-bubble {
+        right: auto;
+        left: 2px;
+        border-radius: 12px 12px 12px 3px;
+    }
+
+    #chatbot-fab.hy-left .chatbot-hy-bubble::after {
+        right: auto;
+        left: 11px;
+    }
+
+    #chatbot-fab:hover:not(.is-dragging) .chatbot-hy-bubble {
+        background: #2232b8;
+    }
+
+    #chatbot-fab:hover:not(.is-dragging) .chatbot-hy-bubble::after {
+        border-top-color: #2232b8;
+    }
+
+    #chatbot-fab.hy-below:hover:not(.is-dragging) .chatbot-hy-bubble::after {
+        border-top-color: transparent;
+        border-bottom-color: #2232b8;
     }
 
     #chatbot-fab .chatbot-fab-badge {
         pointer-events: none;
         position: absolute;
-        top: -2px;
-        right: -2px;
-        width: 16px;
-        height: 16px;
+        bottom: 1px;
+        right: 1px;
+        width: 13px;
+        height: 13px;
         border-radius: 50%;
         background: #10b981;
-        border: 2.5px solid #fff;
-        animation: chatbot-badge-blink 2s ease-in-out infinite;
+        border: 2.5px solid #ffffff;
     }
 
-    @keyframes chatbot-fab-pulse {
-        0%, 100% { box-shadow: 0 8px 32px rgba(15, 23, 42, 0.35), 0 2px 8px rgba(15, 23, 42, 0.2); }
-        50% { box-shadow: 0 8px 32px rgba(15, 23, 42, 0.35), 0 2px 8px rgba(15, 23, 42, 0.2), 0 0 0 8px rgba(30, 41, 59, 0.08); }
+    @keyframes chatbot-mascot-alive {
+        0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+        25% { transform: translateY(-2.5px) rotate(-4deg) scale(1.03); }
+        50% { transform: translateY(-1px) rotate(3deg) scale(1.01); }
+        75% { transform: translateY(-2px) rotate(-2deg) scale(1.02); }
+    }
+
+    @keyframes chatbot-hy-wave {
+        0%, 100% { transform: translateY(0) scale(1); }
+        25% { transform: translateY(-3px) scale(1.04); }
+        50% { transform: translateY(-1px) scale(1); }
+        75% { transform: translateY(-2px) scale(1.02); }
     }
 
     @keyframes chatbot-badge-blink {
@@ -82,9 +180,9 @@
         50% { opacity: 0.5; }
     }
 
-    /* Respect prefers-reduced-motion (R-18, R-37, WCAG 2.3.3) */
+    /* Respect prefers-reduced-motion (R-18, R-37, R-39, WCAG 2.3.3) */
     @media (prefers-reduced-motion: reduce) {
-        #chatbot-fab, #chatbot-fab .chatbot-fab-badge, .chatbot-typing-dots span {
+        #chatbot-fab, #chatbot-fab .chatbot-fab-mascot, #chatbot-fab .chatbot-hy-bubble, #chatbot-fab .chatbot-fab-badge, .chatbot-typing-dots span {
             animation: none !important;
             transition: none !important;
         }
@@ -185,18 +283,22 @@
         width: 38px;
         height: 38px;
         border-radius: 12px;
-        background: linear-gradient(135deg, #3b82f6, #6366f1);
+        background: #ffffff;
+        border: 1.5px solid rgba(255, 255, 255, 0.9);
+        padding: 3px;
         display: flex;
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
-        box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.2);
     }
 
-    .chatbot-avatar svg {
-        width: 20px;
-        height: 20px;
-        color: #fff;
+    .chatbot-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
     }
 
     .chatbot-header-info h3 {
@@ -320,9 +422,18 @@
     }
 
     .chatbot-msg-ai .chatbot-msg-avatar {
-        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-        color: #fff;
-        border: 1px solid rgba(255,255,255,0.25);
+        background: #ffffff;
+        color: #3143da;
+        border: 1px solid #dbeafe;
+        padding: 2px;
+        overflow: hidden;
+    }
+
+    .chatbot-msg-ai .chatbot-msg-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
     }
 
     .chatbot-msg-user .chatbot-msg-avatar {
@@ -514,21 +625,25 @@
     }
 
     .chatbot-welcome-icon {
-        width: 44px;
-        height: 44px;
-        border-radius: 14px;
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        background: #ffffff;
+        border: 2px solid #dbeafe;
+        padding: 5px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         margin-bottom: 10px;
-        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+        overflow: hidden;
+        box-shadow: 0 4px 12px rgba(49, 67, 218, 0.14);
     }
 
-    .chatbot-welcome-icon svg {
-        width: 22px;
-        height: 22px;
-        color: #fff;
+    .chatbot-welcome-icon img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
     }
 
     .chatbot-welcome h4 {
@@ -742,10 +857,20 @@
         }
 
         #chatbot-fab {
-            width: 52px;
-            height: 52px;
+            width: 54px;
+            height: 54px;
             bottom: 20px;
             right: 20px;
+        }
+
+        #chatbot-fab .chatbot-fab-mascot {
+            width: 42px;
+            height: 42px;
+        }
+
+        #chatbot-fab .chatbot-hy-bubble {
+            font-size: 10.5px;
+            padding: 5px 9px;
         }
 
         .chatbot-msg {
@@ -812,11 +937,16 @@
 
 @if(auth()->check())
 {{-- Floating Action Button (Bisa digeser / Draggable di semua perangkat) --}}
-<button id="chatbot-fab" title="Klik untuk membuka AI Chatbot, atau geser (drag) untuk memindahkan posisi" aria-label="Buka AI Chatbot">
-    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
-    </svg>
-    <span class="chatbot-fab-badge"></span>
+<button id="chatbot-fab" type="button" title="Klik untuk membuka AI Chatbot, atau geser (drag) untuk memindahkan posisi" aria-label="Buka Asisten Kelas AI">
+    <span class="chatbot-hy-bubble" aria-hidden="true">HY!</span>
+    <img class="chatbot-fab-mascot"
+         src="{{ asset('images/chatbot-icon.webp') }}"
+         onerror="this.onerror=null;this.src='{{ asset('images/chatbot-icon.png') }}';"
+         alt="Asisten Kelas AI"
+         width="48"
+         height="48"
+         draggable="false">
+    <span class="chatbot-fab-badge" aria-hidden="true"></span>
 </button>
 
 {{-- Chat Panel --}}
@@ -829,9 +959,12 @@
         <div class="chatbot-header-main">
             <div class="chatbot-header-left">
                 <div class="chatbot-avatar">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                    </svg>
+                    <img src="{{ asset('images/chatbot-icon.webp') }}"
+                         onerror="this.onerror=null;this.src='{{ asset('images/chatbot-icon.png') }}';"
+                         alt="Asisten Kelas AI"
+                         width="32"
+                         height="32"
+                         draggable="false">
                 </div>
                 <div class="chatbot-header-info">
                     <h3>Asisten Kelas AI</h3>
@@ -902,9 +1035,12 @@
         {{-- Welcome Card --}}
         <div class="chatbot-welcome">
             <div class="chatbot-welcome-icon">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                </svg>
+                <img src="{{ asset('images/chatbot-icon.webp') }}"
+                     onerror="this.onerror=null;this.src='{{ asset('images/chatbot-icon.png') }}';"
+                     alt="Asisten Kelas AI"
+                     width="44"
+                     height="44"
+                     draggable="false">
             </div>
 
             <!-- Identitas User Profil -->
@@ -914,7 +1050,7 @@
                 <span class="chatbot-msg-tag chatbot-tag-{{ $userRole }}">{{ $userRoleLabel }}</span>
             </div>
 
-            <h4>Halo, {{ $userName }}!</h4>
+            <h4>HY, {{ $userName }}!</h4>
             <div style="display:inline-flex; align-items:center; gap:6px; font-size:10.5px; color:#475569; background:#f1f5f9; padding:2px 10px; border-radius:12px; margin-top:3px; border:1px solid #e2e8f0;">
                 <span>{{ $pageIcon }}</span>
                 <span>Halaman: <strong class="text-slate-800">{{ $pageTitle }}</strong></span>
@@ -1048,6 +1184,10 @@
 <script>
     const CHATBOT_CHAT_URL = "{{ route('chatbot.chat') }}";
     const CHATBOT_CLEAR_URL = "{{ route('chatbot.clear') }}";
+    const CHATBOT_AVATAR_URL = "{{ asset('images/chatbot-icon.webp') }}";
+    const CHATBOT_AVATAR_FALLBACK = "{{ asset('images/chatbot-icon.png') }}";
+    const CHATBOT_AVATAR_IMG_SM = `<img src="${CHATBOT_AVATAR_URL}" onerror="this.onerror=null;this.src='${CHATBOT_AVATAR_FALLBACK}';" alt="Asisten AI" width="26" height="26" draggable="false">`;
+    const CHATBOT_AVATAR_IMG_MD = `<img src="${CHATBOT_AVATAR_URL}" onerror="this.onerror=null;this.src='${CHATBOT_AVATAR_FALLBACK}';" alt="Asisten AI" width="44" height="44" draggable="false">`;
     function getCsrfToken() {
         return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || "{{ csrf_token() }}";
     }
@@ -1309,7 +1449,7 @@
 
         wrapper.innerHTML = `
             <div class="chatbot-msg-avatar" title="Asisten AI Kelas Informatika">
-                AI
+                ${CHATBOT_AVATAR_IMG_SM}
             </div>
             <div style="max-width: 84%; display: flex; flex-direction: column; align-items: flex-start;">
                 <div class="chatbot-msg-meta">
@@ -1388,7 +1528,7 @@
         typing.className = 'chatbot-msg chatbot-msg-ai';
         typing.id = 'chatbot-typing-indicator';
         typing.innerHTML = `
-            <div class="chatbot-msg-avatar" title="Asisten AI Kelas">AI</div>
+            <div class="chatbot-msg-avatar" title="Asisten AI Kelas">${CHATBOT_AVATAR_IMG_SM}</div>
             <div style="max-width: 82%;">
                 <div class="chatbot-msg-meta">
                     <span class="chatbot-msg-name">Asisten AI Kelas</span>
@@ -1711,11 +1851,9 @@
             container.innerHTML = `
                 <div class="chatbot-welcome">
                     <div class="chatbot-welcome-icon">
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                        </svg>
+                        ${CHATBOT_AVATAR_IMG_MD}
                     </div>
-                    <h4>Percakapan Direset</h4>
+                    <h4>HY, Percakapan Direset!</h4>
                     <p>Riwayat percakapan telah dihapus. Silakan mulai percakapan baru dengan topik seputar halaman ini:</p>
                     ${actionsHtml}
                 </div>
@@ -1780,14 +1918,20 @@
             return { x: e.clientX, y: e.clientY };
         }
 
+        function syncHyBubblePlacement() {
+            const rect = fab.getBoundingClientRect();
+            fab.classList.toggle('hy-below', rect.top < 52);
+            fab.classList.toggle('hy-left', rect.left < 32);
+        }
+
         function restoreFabPosition() {
             try {
                 const saved = localStorage.getItem('ups_chatbot_fab_position');
                 if (saved) {
                     const pos = JSON.parse(saved);
                     const margin = 12;
-                    const maxLeft = window.innerWidth - (fab.offsetWidth || 56) - margin;
-                    const maxTop = window.innerHeight - (fab.offsetHeight || 56) - margin;
+                    const maxLeft = window.innerWidth - (fab.offsetWidth || 60) - margin;
+                    const maxTop = window.innerHeight - (fab.offsetHeight || 60) - margin;
 
                     if (typeof pos.x === 'number' && typeof pos.y === 'number') {
                         fab.style.left = clamp(pos.x, margin, maxLeft) + 'px';
@@ -1797,6 +1941,7 @@
                     }
                 }
             } catch (err) {}
+            syncHyBubblePlacement();
         }
 
         window.addEventListener('resize', function() {
@@ -1804,11 +1949,12 @@
                 const margin = 12;
                 const curLeft = parseFloat(fab.style.left) || 0;
                 const curTop = parseFloat(fab.style.top) || 0;
-                const maxLeft = window.innerWidth - (fab.offsetWidth || 56) - margin;
-                const maxTop = window.innerHeight - (fab.offsetHeight || 56) - margin;
+                const maxLeft = window.innerWidth - (fab.offsetWidth || 60) - margin;
+                const maxTop = window.innerHeight - (fab.offsetHeight || 60) - margin;
                 fab.style.left = clamp(curLeft, margin, maxLeft) + 'px';
                 fab.style.top = clamp(curTop, margin, maxTop) + 'px';
             }
+            syncHyBubblePlacement();
         });
 
         function onDragStart(e) {
@@ -1859,6 +2005,7 @@
                 fab.style.top = newTop + 'px';
                 fab.style.right = 'auto';
                 fab.style.bottom = 'auto';
+                syncHyBubblePlacement();
             }
         }
 
