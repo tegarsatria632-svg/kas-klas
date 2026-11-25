@@ -64,10 +64,10 @@
     }
 
     #chatbot-fab .chatbot-fab-mascot {
+        position: relative;
         width: 48px;
         height: 48px;
         border-radius: 50%;
-        object-fit: contain;
         display: block;
         pointer-events: none;
         animation: chatbot-mascot-alive 3.4s ease-in-out infinite;
@@ -77,7 +77,122 @@
 
     #chatbot-fab:hover:not(.is-dragging) .chatbot-fab-mascot {
         animation-play-state: paused;
-        transform: scale(1.08) rotate(-6deg);
+        transform: scale(1.08) rotate(-5deg);
+    }
+
+    /* Stage wajah maskot dengan lapisan mata SVG realistis (buka-tutup & melirik natural) */
+    .chatbot-mascot-stage {
+        position: relative;
+        display: block;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+    }
+
+    .chatbot-mascot-stage img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+        border-radius: 50%;
+    }
+
+    .chatbot-mascot-stage .chatbot-eyes-svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        pointer-events: none;
+    }
+
+    .chatbot-eyes-svg .mascot-pupil-group {
+        animation: chatbot-pupil-glance 6.8s ease-in-out infinite;
+    }
+
+    .chatbot-eyes-svg .mascot-lid-top {
+        transform-box: fill-box;
+        transform-origin: center top;
+        transform: scaleY(0);
+        animation: chatbot-lid-blink 5.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        transition: transform 0.18s ease;
+    }
+
+    .chatbot-eyes-svg .mascot-lid-bottom {
+        transform-box: fill-box;
+        transform-origin: center bottom;
+        transform: scaleY(0);
+        animation: chatbot-lid-bottom-blink 5.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        transition: transform 0.18s ease;
+    }
+
+    .chatbot-eyes-svg .mascot-closed-arcs {
+        opacity: 0;
+        animation: chatbot-arc-blink 5.4s ease-in-out infinite;
+        transition: opacity 0.18s ease;
+    }
+
+    /* Saat hover FAB: maskot tersenyum ramah menyapa dengan mata lengkung */
+    #chatbot-fab:hover:not(.is-dragging) .mascot-lid-top {
+        animation: none;
+        transform: scaleY(1);
+    }
+
+    #chatbot-fab:hover:not(.is-dragging) .mascot-lid-bottom {
+        animation: none;
+        transform: scaleY(0.75);
+    }
+
+    #chatbot-fab:hover:not(.is-dragging) .mascot-closed-arcs {
+        animation: none;
+        opacity: 1;
+    }
+
+    #chatbot-fab.is-dragging .mascot-pupil-group,
+    #chatbot-fab.is-dragging .mascot-lid-top,
+    #chatbot-fab.is-dragging .mascot-lid-bottom,
+    #chatbot-fab.is-dragging .mascot-closed-arcs {
+        animation-play-state: paused !important;
+    }
+
+    @keyframes chatbot-pupil-glance {
+        0%, 22% { transform: translate(0px, 0px); }
+        28%, 48% { transform: translate(-2.2px, -0.6px); }
+        54%, 68% { transform: translate(2.2px, 0.4px); }
+        74%, 84% { transform: translate(0px, -1px); }
+        90%, 100% { transform: translate(0px, 0px); }
+    }
+
+    @keyframes chatbot-lid-blink {
+        0%, 33% { transform: scaleY(0); }
+        36.2% { transform: scaleY(1); }
+        38.4% { transform: scaleY(1); }
+        41.6% { transform: scaleY(0); }
+        74% { transform: scaleY(0); }
+        76.8% { transform: scaleY(1); }
+        79.8% { transform: scaleY(0); }
+        82.4% { transform: scaleY(1); }
+        85.8%, 100% { transform: scaleY(0); }
+    }
+
+    @keyframes chatbot-lid-bottom-blink {
+        0%, 33% { transform: scaleY(0); }
+        36.2%, 38.4% { transform: scaleY(0.7); }
+        41.6%, 74% { transform: scaleY(0); }
+        76.8% { transform: scaleY(0.65); }
+        79.8% { transform: scaleY(0); }
+        82.4% { transform: scaleY(0.7); }
+        85.8%, 100% { transform: scaleY(0); }
+    }
+
+    @keyframes chatbot-arc-blink {
+        0%, 34.8% { opacity: 0; }
+        36%, 38.8% { opacity: 1; }
+        40.4%, 75.4% { opacity: 0; }
+        76.6%, 78.2% { opacity: 1; }
+        79.4%, 81.2% { opacity: 0; }
+        82.2%, 84% { opacity: 1; }
+        85.4%, 100% { opacity: 0; }
     }
 
     /* Bubble sapaan HY yang menyatu & bergerak hidup bersama maskot */
@@ -182,7 +297,8 @@
 
     /* Respect prefers-reduced-motion (R-18, R-37, R-39, WCAG 2.3.3) */
     @media (prefers-reduced-motion: reduce) {
-        #chatbot-fab, #chatbot-fab .chatbot-fab-mascot, #chatbot-fab .chatbot-hy-bubble, #chatbot-fab .chatbot-fab-badge, .chatbot-typing-dots span {
+        #chatbot-fab, #chatbot-fab .chatbot-fab-mascot, #chatbot-fab .chatbot-hy-bubble, #chatbot-fab .chatbot-fab-badge, .chatbot-typing-dots span,
+        .chatbot-eyes-svg .mascot-pupil-group, .chatbot-eyes-svg .mascot-lid-top, .chatbot-eyes-svg .mascot-lid-bottom, .chatbot-eyes-svg .mascot-closed-arcs {
             animation: none !important;
             transition: none !important;
         }
@@ -939,13 +1055,38 @@
 {{-- Floating Action Button (Bisa digeser / Draggable di semua perangkat) --}}
 <button id="chatbot-fab" type="button" title="Klik untuk membuka AI Chatbot, atau geser (drag) untuk memindahkan posisi" aria-label="Buka Asisten Kelas AI">
     <span class="chatbot-hy-bubble" aria-hidden="true">HY!</span>
-    <img class="chatbot-fab-mascot"
-         src="{{ asset('images/chatbot-icon.webp') }}"
-         onerror="this.onerror=null;this.src='{{ asset('images/chatbot-icon.png') }}';"
-         alt="Asisten Kelas AI"
-         width="48"
-         height="48"
-         draggable="false">
+    <span class="chatbot-fab-mascot">
+        <span class="chatbot-mascot-stage">
+            <img src="{{ asset('images/chatbot-icon-base.webp') }}"
+                 onerror="this.onerror=null;this.src='{{ asset('images/chatbot-icon-base.png') }}';"
+                 alt="Asisten Kelas AI"
+                 width="48"
+                 height="48"
+                 draggable="false">
+            <svg class="chatbot-eyes-svg" viewBox="0 0 192 192" aria-hidden="true">
+                <ellipse cx="70.5" cy="89.5" rx="10.2" ry="11.2" fill="#3143da" />
+                <g class="mascot-pupil-group">
+                    <circle cx="70.8" cy="90.0" r="4.8" fill="#1b2691" opacity="0.65" />
+                    <circle cx="67.0" cy="85.0" r="3.2" fill="#ffffff" />
+                    <circle cx="74.0" cy="93.2" r="1.4" fill="#ffffff" opacity="0.85" />
+                </g>
+                <ellipse cx="120.5" cy="89.5" rx="10.2" ry="11.2" fill="#3143da" />
+                <g class="mascot-pupil-group">
+                    <circle cx="120.8" cy="90.0" r="4.8" fill="#1b2691" opacity="0.65" />
+                    <circle cx="117.0" cy="85.0" r="3.2" fill="#ffffff" />
+                    <circle cx="124.0" cy="93.2" r="1.4" fill="#ffffff" opacity="0.85" />
+                </g>
+                <rect class="mascot-lid-top" x="58" y="77" width="25" height="25.5" rx="4" fill="#ffffff" />
+                <rect class="mascot-lid-top" x="108" y="77" width="25" height="25.5" rx="4" fill="#ffffff" />
+                <rect class="mascot-lid-bottom" x="58" y="95" width="25" height="8" rx="3" fill="#ffffff" />
+                <rect class="mascot-lid-bottom" x="108" y="95" width="25" height="8" rx="3" fill="#ffffff" />
+                <g class="mascot-closed-arcs">
+                    <path d="M60.5 91.5 Q70.5 81.5 80.5 91.5" fill="none" stroke="#3143da" stroke-width="5.2" stroke-linecap="round" />
+                    <path d="M110.5 91.5 Q120.5 81.5 130.5 91.5" fill="none" stroke="#3143da" stroke-width="5.2" stroke-linecap="round" />
+                </g>
+            </svg>
+        </span>
+    </span>
     <span class="chatbot-fab-badge" aria-hidden="true"></span>
 </button>
 
@@ -959,12 +1100,36 @@
         <div class="chatbot-header-main">
             <div class="chatbot-header-left">
                 <div class="chatbot-avatar">
-                    <img src="{{ asset('images/chatbot-icon.webp') }}"
-                         onerror="this.onerror=null;this.src='{{ asset('images/chatbot-icon.png') }}';"
-                         alt="Asisten Kelas AI"
-                         width="32"
-                         height="32"
-                         draggable="false">
+                    <span class="chatbot-mascot-stage">
+                        <img src="{{ asset('images/chatbot-icon-base.webp') }}"
+                             onerror="this.onerror=null;this.src='{{ asset('images/chatbot-icon-base.png') }}';"
+                             alt="Asisten Kelas AI"
+                             width="32"
+                             height="32"
+                             draggable="false">
+                        <svg class="chatbot-eyes-svg" viewBox="0 0 192 192" aria-hidden="true">
+                            <ellipse cx="70.5" cy="89.5" rx="10.2" ry="11.2" fill="#3143da" />
+                            <g class="mascot-pupil-group">
+                                <circle cx="70.8" cy="90.0" r="4.8" fill="#1b2691" opacity="0.65" />
+                                <circle cx="67.0" cy="85.0" r="3.2" fill="#ffffff" />
+                                <circle cx="74.0" cy="93.2" r="1.4" fill="#ffffff" opacity="0.85" />
+                            </g>
+                            <ellipse cx="120.5" cy="89.5" rx="10.2" ry="11.2" fill="#3143da" />
+                            <g class="mascot-pupil-group">
+                                <circle cx="120.8" cy="90.0" r="4.8" fill="#1b2691" opacity="0.65" />
+                                <circle cx="117.0" cy="85.0" r="3.2" fill="#ffffff" />
+                                <circle cx="124.0" cy="93.2" r="1.4" fill="#ffffff" opacity="0.85" />
+                            </g>
+                            <rect class="mascot-lid-top" x="58" y="77" width="25" height="25.5" rx="4" fill="#ffffff" />
+                            <rect class="mascot-lid-top" x="108" y="77" width="25" height="25.5" rx="4" fill="#ffffff" />
+                            <rect class="mascot-lid-bottom" x="58" y="95" width="25" height="8" rx="3" fill="#ffffff" />
+                            <rect class="mascot-lid-bottom" x="108" y="95" width="25" height="8" rx="3" fill="#ffffff" />
+                            <g class="mascot-closed-arcs">
+                                <path d="M60.5 91.5 Q70.5 81.5 80.5 91.5" fill="none" stroke="#3143da" stroke-width="5.2" stroke-linecap="round" />
+                                <path d="M110.5 91.5 Q120.5 81.5 130.5 91.5" fill="none" stroke="#3143da" stroke-width="5.2" stroke-linecap="round" />
+                            </g>
+                        </svg>
+                    </span>
                 </div>
                 <div class="chatbot-header-info">
                     <h3>Asisten Kelas AI</h3>
@@ -1035,12 +1200,36 @@
         {{-- Welcome Card --}}
         <div class="chatbot-welcome">
             <div class="chatbot-welcome-icon">
-                <img src="{{ asset('images/chatbot-icon.webp') }}"
-                     onerror="this.onerror=null;this.src='{{ asset('images/chatbot-icon.png') }}';"
-                     alt="Asisten Kelas AI"
-                     width="44"
-                     height="44"
-                     draggable="false">
+                <span class="chatbot-mascot-stage">
+                    <img src="{{ asset('images/chatbot-icon-base.webp') }}"
+                         onerror="this.onerror=null;this.src='{{ asset('images/chatbot-icon-base.png') }}';"
+                         alt="Asisten Kelas AI"
+                         width="44"
+                         height="44"
+                         draggable="false">
+                    <svg class="chatbot-eyes-svg" viewBox="0 0 192 192" aria-hidden="true">
+                        <ellipse cx="70.5" cy="89.5" rx="10.2" ry="11.2" fill="#3143da" />
+                        <g class="mascot-pupil-group">
+                            <circle cx="70.8" cy="90.0" r="4.8" fill="#1b2691" opacity="0.65" />
+                            <circle cx="67.0" cy="85.0" r="3.2" fill="#ffffff" />
+                            <circle cx="74.0" cy="93.2" r="1.4" fill="#ffffff" opacity="0.85" />
+                        </g>
+                        <ellipse cx="120.5" cy="89.5" rx="10.2" ry="11.2" fill="#3143da" />
+                        <g class="mascot-pupil-group">
+                            <circle cx="120.8" cy="90.0" r="4.8" fill="#1b2691" opacity="0.65" />
+                            <circle cx="117.0" cy="85.0" r="3.2" fill="#ffffff" />
+                            <circle cx="124.0" cy="93.2" r="1.4" fill="#ffffff" opacity="0.85" />
+                        </g>
+                        <rect class="mascot-lid-top" x="58" y="77" width="25" height="25.5" rx="4" fill="#ffffff" />
+                        <rect class="mascot-lid-top" x="108" y="77" width="25" height="25.5" rx="4" fill="#ffffff" />
+                        <rect class="mascot-lid-bottom" x="58" y="95" width="25" height="8" rx="3" fill="#ffffff" />
+                        <rect class="mascot-lid-bottom" x="108" y="95" width="25" height="8" rx="3" fill="#ffffff" />
+                        <g class="mascot-closed-arcs">
+                            <path d="M60.5 91.5 Q70.5 81.5 80.5 91.5" fill="none" stroke="#3143da" stroke-width="5.2" stroke-linecap="round" />
+                            <path d="M110.5 91.5 Q120.5 81.5 130.5 91.5" fill="none" stroke="#3143da" stroke-width="5.2" stroke-linecap="round" />
+                        </g>
+                    </svg>
+                </span>
             </div>
 
             <!-- Identitas User Profil -->
@@ -1186,8 +1375,10 @@
     const CHATBOT_CLEAR_URL = "{{ route('chatbot.clear') }}";
     const CHATBOT_AVATAR_URL = "{{ asset('images/chatbot-icon.webp') }}";
     const CHATBOT_AVATAR_FALLBACK = "{{ asset('images/chatbot-icon.png') }}";
+    const CHATBOT_AVATAR_BASE_URL = "{{ asset('images/chatbot-icon-base.webp') }}";
+    const CHATBOT_AVATAR_BASE_FALLBACK = "{{ asset('images/chatbot-icon-base.png') }}";
     const CHATBOT_AVATAR_IMG_SM = `<img src="${CHATBOT_AVATAR_URL}" onerror="this.onerror=null;this.src='${CHATBOT_AVATAR_FALLBACK}';" alt="Asisten AI" width="26" height="26" draggable="false">`;
-    const CHATBOT_AVATAR_IMG_MD = `<img src="${CHATBOT_AVATAR_URL}" onerror="this.onerror=null;this.src='${CHATBOT_AVATAR_FALLBACK}';" alt="Asisten AI" width="44" height="44" draggable="false">`;
+    const CHATBOT_AVATAR_IMG_MD = `<span class="chatbot-mascot-stage"><img src="${CHATBOT_AVATAR_BASE_URL}" onerror="this.onerror=null;this.src='${CHATBOT_AVATAR_BASE_FALLBACK}';" alt="Asisten AI" width="44" height="44" draggable="false"><svg class="chatbot-eyes-svg" viewBox="0 0 192 192" aria-hidden="true"><ellipse cx="70.5" cy="89.5" rx="10.2" ry="11.2" fill="#3143da" /><g class="mascot-pupil-group"><circle cx="70.8" cy="90.0" r="4.8" fill="#1b2691" opacity="0.65" /><circle cx="67.0" cy="85.0" r="3.2" fill="#ffffff" /><circle cx="74.0" cy="93.2" r="1.4" fill="#ffffff" opacity="0.85" /></g><ellipse cx="120.5" cy="89.5" rx="10.2" ry="11.2" fill="#3143da" /><g class="mascot-pupil-group"><circle cx="120.8" cy="90.0" r="4.8" fill="#1b2691" opacity="0.65" /><circle cx="117.0" cy="85.0" r="3.2" fill="#ffffff" /><circle cx="124.0" cy="93.2" r="1.4" fill="#ffffff" opacity="0.85" /></g><rect class="mascot-lid-top" x="58" y="77" width="25" height="25.5" rx="4" fill="#ffffff" /><rect class="mascot-lid-top" x="108" y="77" width="25" height="25.5" rx="4" fill="#ffffff" /><rect class="mascot-lid-bottom" x="58" y="95" width="25" height="8" rx="3" fill="#ffffff" /><rect class="mascot-lid-bottom" x="108" y="95" width="25" height="8" rx="3" fill="#ffffff" /><g class="mascot-closed-arcs"><path d="M60.5 91.5 Q70.5 81.5 80.5 91.5" fill="none" stroke="#3143da" stroke-width="5.2" stroke-linecap="round" /><path d="M110.5 91.5 Q120.5 81.5 130.5 91.5" fill="none" stroke="#3143da" stroke-width="5.2" stroke-linecap="round" /></g></svg></span>`;
     function getCsrfToken() {
         return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || "{{ csrf_token() }}";
     }
