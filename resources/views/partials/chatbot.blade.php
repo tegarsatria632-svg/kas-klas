@@ -1563,6 +1563,7 @@
         try {
             let response = await fetch(CHATBOT_CHAT_URL, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': getCsrfToken(),
@@ -1574,7 +1575,10 @@
             // Mitigasi 419: Auto-Refresh CSRF Token & Retry Sekali
             if (response.status === 419) {
                 try {
-                    const tokenRes = await fetch('{{ route("csrf.token") }}', { headers: { 'Accept': 'application/json' } });
+                    const tokenRes = await fetch('{{ route("csrf.token") }}', {
+                        credentials: 'same-origin',
+                        headers: { 'Accept': 'application/json' },
+                    });
                     const tokenData = await tokenRes.json();
                     if (tokenData && tokenData.token) {
                         const freshToken = tokenData.token;
@@ -1583,6 +1587,7 @@
 
                         response = await fetch(CHATBOT_CHAT_URL, {
                             method: 'POST',
+                            credentials: 'same-origin',
                             headers: {
                                 'Content-Type': 'application/json',
                                 'X-CSRF-TOKEN': freshToken,
@@ -1598,7 +1603,7 @@
             try {
                 data = await response.json();
             } catch (parseErr) {
-                data = { success: false, reply: 'Maaf, server mengembalikan respons yang tidak valid. Silakan coba lagi.' };
+                data = { success: false, reply: '⚠️ Server mengembalikan respons yang tidak valid. Silakan muat ulang halaman (F5) lalu coba lagi.' };
             }
             removeTypingIndicator();
 
@@ -1634,12 +1639,25 @@
                         window.location.reload();
                     }, 1200);
                 }
+            } else if (response.status === 401) {
+                addAiMessage('🔒 Sesi login Anda telah habis. Silakan muat ulang halaman dan masuk kembali untuk menggunakan AI Agent.');
+                setTimeout(() => {
+                    window.location.href = '{{ route("login") }}';
+                }, 1800);
+            } else if (response.status === 419) {
+                addAiMessage('🔄 Token sesi halaman kedaluwarsa. Halaman akan dimuat ulang otomatis agar chatbot kembali sinkron...');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
             } else {
+                const validationMsg = (data && data.errors && data.errors.message && data.errors.message[0]) ? data.errors.message[0] : null;
                 const errMsg = (data && data.reply)
                     ? data.reply
-                    : (response.status >= 500
-                        ? '⚠️ Terjadi gangguan sementara saat memproses aksi di server. Silakan coba kirim ulang perintah Anda.'
-                        : 'Maaf, terjadi kesalahan. Silakan coba lagi.');
+                    : (validationMsg
+                        ? '⚠️ ' + validationMsg
+                        : (response.status >= 500
+                            ? '⚠️ Terjadi gangguan sementara saat memproses aksi di server. Silakan coba kirim ulang perintah Anda.'
+                            : (data && data.message ? '⚠️ ' + data.message : 'Maaf, terjadi kesalahan. Silakan coba lagi.')));
                 addAiMessage(errMsg);
             }
         } catch (error) {
