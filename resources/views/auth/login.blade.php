@@ -45,7 +45,6 @@
 </head>
 <body class="bg-slate-50 min-h-screen flex items-center justify-center p-4 sm:p-6 text-slate-800 antialiased">
     @include('partials.page-loader')
-    @include('partials.toast-feedback')
 
     <!-- Main Container -->
     <main class="w-full max-w-md">

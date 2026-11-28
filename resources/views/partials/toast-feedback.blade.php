@@ -191,7 +191,7 @@
             const opts = options || {};
             const title = opts.title || DEFAULT_TITLES[kind];
             const minDuration = 2000;
-            const defaultDuration = kind === 'success' ? 3500 : 4500;
+            const defaultDuration = kind === 'success' ? 2500 : 3000;
             const duration = Math.max(minDuration, Number(opts.duration) || defaultDuration);
 
             const toast = document.createElement('div');
