@@ -1,4 +1,5 @@
 {{-- Global Page Loading Overlay (.loader) --}}
+@php($loaderTriggerOnly = !empty($triggerOnly))
 <style>
     #global-page-loader {
         position: fixed;
@@ -57,7 +58,7 @@
     }
 </style>
 
-<div id="global-page-loader" role="status" aria-live="polite" aria-label="Memuat halaman">
+<div id="global-page-loader" class="{{ $loaderTriggerOnly ? 'is-hidden' : '' }}" role="status" aria-live="polite" aria-label="Memuat halaman">
     <div class="loader" aria-hidden="true"></div>
     <p id="global-page-loader-label" class="global-loader-text">Memuat halaman...</p>
 </div>
@@ -66,6 +67,7 @@
     (function initGlobalPageLoader() {
         const overlay = document.getElementById('global-page-loader');
         const labelEl = document.getElementById('global-page-loader-label');
+        const triggerOnly = {{ $loaderTriggerOnly ? 'true' : 'false' }};
         if (!overlay) return;
 
         let safetyTimer = null;
@@ -91,6 +93,13 @@
         window.showPageLoader = showLoader;
         window.hidePageLoader = hideLoader;
 
+        // Pastikan overlay tidak macet saat tombol Back/Forward browser (BFCache)
+        window.addEventListener('pageshow', hideLoader);
+
+        if (triggerOnly) {
+            return;
+        }
+
         // Sembunyikan begitu dokumen selesai dimuat
         if (document.readyState === 'complete') {
             hideLoader();
@@ -100,9 +109,6 @@
                 setTimeout(hideLoader, 180);
             }, { once: true });
         }
-
-        // Pastikan overlay tidak macet saat tombol Back/Forward browser (BFCache)
-        window.addEventListener('pageshow', hideLoader);
 
         // Tampilkan loader saat klik tautan navigasi internal
         document.addEventListener('click', function(e) {

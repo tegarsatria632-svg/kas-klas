@@ -74,6 +74,7 @@
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 min-h-screen md:h-screen md:overflow-hidden flex antialiased">
+    @include('partials.page-loader', ['triggerOnly' => true])
     @include('partials.toast-feedback')
 
     <!-- Mobile Backdrop Overlay -->
@@ -176,7 +177,7 @@
             </div>
 
             <a href="{{ route('logout') }}" 
-               onclick="return confirm('Apakah Anda yakin ingin keluar dari sistem?')"
+               onclick="if (confirm('Apakah Anda yakin ingin keluar dari sistem?')) { if (typeof window.showPageLoader === 'function') window.showPageLoader('Sedang keluar dari sistem...'); return true; } return false;"
                class="w-full min-h-[38px] flex items-center px-2 py-1.5 -mx-2 rounded-md text-xs font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50/70 transition-colors" 
                title="Keluar dari akun">
                 <svg class="w-4 h-4 mr-2 text-rose-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
