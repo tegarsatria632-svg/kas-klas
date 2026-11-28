@@ -24,6 +24,31 @@ class TrustProxies extends Middleware
         Request::HEADER_X_FORWARDED_AWS_ELB;
 
     /**
+     * Kembalikan daftar trusted proxies dari konfigurasi environment.
+     * Default '*' menjaga kompatibilitas Vercel, Docker/Caddy, dan shared hosting cPanel,
+     * namun dapat dipersempit lewat env TRUSTED_PROXIES (misal: "127.0.0.1,10.0.0.0/8").
+     *
+     * @return array|string|null
+     */
+    protected function proxies()
+    {
+        $configured = config('security.trusted_proxies', $this->proxies);
+
+        if (is_string($configured)) {
+            $trimmed = trim($configured);
+            if ($trimmed === '' || $trimmed === 'null') {
+                return null;
+            }
+            if ($trimmed === '*' || $trimmed === '**') {
+                return $trimmed;
+            }
+            return array_values(array_filter(array_map('trim', explode(',', $trimmed))));
+        }
+
+        return $configured;
+    }
+
+    /**
      * Set the trusted proxy to be the calling IP or safe fallback.
      */
     protected function setTrustedProxyIpAddressesToTheCallingIp(Request $request)

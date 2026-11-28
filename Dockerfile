@@ -1,7 +1,7 @@
 FROM dunglas/frankenphp:1-php8.3-bookworm AS base
 
 RUN cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
-    && printf "error_reporting = E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED\ndisplay_errors = Off\nlog_errors = On\n" > "$PHP_INI_DIR/conf.d/zz-laravel.ini" \
+    && printf "error_reporting = E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED\ndisplay_errors = Off\nlog_errors = On\nexpose_php = Off\n" > "$PHP_INI_DIR/conf.d/zz-laravel.ini" \
     && install-php-extensions intl zip pdo_pgsql pgsql
 
 WORKDIR /app
