@@ -74,7 +74,7 @@
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 min-h-screen md:h-screen md:overflow-hidden flex antialiased">
-    @include('partials.page-loader')
+    @include('partials.toast-feedback')
 
     <!-- Mobile Backdrop Overlay -->
     <div id="sidebar-backdrop" class="fixed inset-0 bg-slate-900/50 z-30 hidden md:hidden" onclick="toggleSidebar()"></div>

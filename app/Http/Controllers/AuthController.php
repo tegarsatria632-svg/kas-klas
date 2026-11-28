@@ -148,7 +148,8 @@ class AuthController extends Controller
             ['ip' => $request->ip()]
         );
 
-        return redirect()->intended(route('dashboard'));
+        return redirect()->intended(route('dashboard'))
+            ->with('success', "Selamat datang, {$user->name}! Anda berhasil masuk ke sistem.");
     }
 
     public function logout(Request $request)

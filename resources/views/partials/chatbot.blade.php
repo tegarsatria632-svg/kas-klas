@@ -1966,17 +1966,33 @@
                 if (data.action_executed) {
                     broadcastClassDataSync();
                     sessionStorage.setItem('chatbot_keep_open_after_sync', 'true');
+                    try {
+                        sessionStorage.setItem('ups_pending_toast', JSON.stringify({
+                            type: 'success',
+                            title: 'Perubahan Berhasil',
+                            message: 'Data berhasil diperbarui melalui AI Assistant.'
+                        }));
+                    } catch (e) {}
+                    if (typeof window.showToast === 'function') {
+                        window.showToast('success', 'Data berhasil diperbarui melalui AI Assistant.', { title: 'Perubahan Berhasil' });
+                    }
                     setTimeout(() => {
                         window.location.reload();
                     }, 1200);
                 }
             } else if (response.status === 401) {
                 addAiMessage('🔒 Sesi login Anda telah habis. Silakan muat ulang halaman dan masuk kembali untuk menggunakan AI Agent.');
+                if (typeof window.showToast === 'function') {
+                    window.showToast('warning', 'Sesi login Anda telah habis. Mengarahkan ke halaman login...');
+                }
                 setTimeout(() => {
                     window.location.href = '{{ route("login") }}';
                 }, 1800);
             } else if (response.status === 419) {
                 addAiMessage('🔄 Token sesi halaman kedaluwarsa. Halaman akan dimuat ulang otomatis agar chatbot kembali sinkron...');
+                if (typeof window.showToast === 'function') {
+                    window.showToast('warning', 'Token sesi diperbarui otomatis. Memuat ulang halaman...');
+                }
                 setTimeout(() => {
                     window.location.reload();
                 }, 1500);
@@ -1990,10 +2006,16 @@
                             ? '⚠️ Terjadi gangguan sementara saat memproses aksi di server. Silakan coba kirim ulang perintah Anda.'
                             : (data && data.message ? '⚠️ ' + data.message : 'Maaf, terjadi kesalahan. Silakan coba lagi.')));
                 addAiMessage(errMsg);
+                if (typeof window.showToast === 'function') {
+                    window.showToast('error', errMsg.replace(/^⚠️\s*/, ''), { title: 'Aksi AI Gagal' });
+                }
             }
         } catch (error) {
             removeTypingIndicator();
             addAiMessage('⚠️ Gagal terhubung ke server. Pastikan koneksi internet Anda stabil dan coba lagi.');
+            if (typeof window.showToast === 'function') {
+                window.showToast('error', 'Gagal terhubung ke server. Periksa koneksi internet Anda.', { title: 'Koneksi Gagal' });
+            }
         } finally {
             chatbotIsSending = false;
             const chatInput = document.getElementById('chatbot-input');
@@ -2049,6 +2071,9 @@
                     ${actionsHtml}
                 </div>
             `;
+        }
+        if (typeof window.showToast === 'function') {
+            window.showToast('success', 'Riwayat percakapan AI berhasil dihapus.');
         }
     }
 
